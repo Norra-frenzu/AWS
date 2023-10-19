@@ -1,0 +1,89 @@
+---
+"AWSTemplateFormatVersion" : "2010-09-09"
+# Description: Create a AutoScalegroup from a launchTemplate 
+# created by: Fredrik Nilsson, 2023-10-19
+# updated:
+# requirement:
+Resources:
+# Create VPC
+#   myVPC:
+#     Type: AWS::EC2::VPC
+#     Properties:
+#       CidrBlock: 10.0.0.0/16
+#       EnableDnsSupport: true
+#       Tags:
+#         - Key: 'Name'
+#           Value: 'VPC'
+# # Create Subnet
+#   subnetNameTest:
+#     Type: AWS::EC2::Subnet
+#     Properties:
+#       AvailabilityZone: Fn::GetAZs !Ref 'AWS::Region'
+#       VpcId: !Ref myVPC
+#       CidrBlock: 10.10.0.0/24
+#       Tags:
+#         - Key: 'Name'
+#           Value: 'Test'
+
+# Create SecGrp http
+  secGroupNameHTTP:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: 'SecGrpHTTP'
+      GroupDescription: 'Allow HTTP - Anywhere'
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: 'Name'
+          Value: 'SecGrpHTTP'
+
+# Create SecGrp ssh
+  secGroupNameSSH:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: 'SecGrpSSH'
+      GroupDescription: 'Allow SSH - Anywhere'
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: 'Name'
+          Value: 'SecGrpSSH'
+# Create Launchtemplate
+  launchTemplateName:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: 'Test2000'
+      LaunchTemplateData:
+        SecurityGroups:
+          - !Ref secGroupNameSSH
+          - !Ref secGroupNameHTTP
+        KeyName: 'AWStest'
+        InstanceType: 't2.micro'
+        ImageId: ami-0dab0800aa38826f2
+        UserData: !Base64 |
+         #!/bin/bash
+         dnf update -y && dnf install nginx -y
+         systemctl start nginx && systemctl enable nginx
+# Create AutoScaleGroup
+  asg:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AvailabilityZones: !GetAZs 'EU-West-1'
+      LaunchConfigurationName: 
+      MaxSize: 0
+      MinSize: 0
+      Tags:
+        - Key: keyname
+          Value: value
+          PropagateAtLaunch: True|False
+# Assign TargetGroup
+  
+# Create Application Loadbalancer
+
+# 
