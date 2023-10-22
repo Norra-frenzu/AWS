@@ -1,36 +1,129 @@
 ---
 "AWSTemplateFormatVersion" : "2010-09-09"
-# Description: Create a AutoScalegroup from a launchTemplate 
-# created by: Fredrik Nilsson, 2023-10-19
-# updated:
-# requirement:
-Resources:
-# Create VPC
-#   myVPC:
-#     Type: AWS::EC2::VPC
-#     Properties:
-#       CidrBlock: 10.0.0.0/16
-#       EnableDnsSupport: true
-#       Tags:
-#         - Key: 'Name'
-#           Value: 'VPC'
-# # Create Subnet
-#   subnetNameTest:
-#     Type: AWS::EC2::Subnet
-#     Properties:
-#       AvailabilityZone: Fn::GetAZs !Ref 'AWS::Region'
-#       VpcId: !Ref myVPC
-#       CidrBlock: 10.10.0.0/24
-#       Tags:
-#         - Key: 'Name'
-#           Value: 'Test'
+Description: >
+  Create a template with instances that updates and install nginx package,. 
+  Setup stack unik vpc, subnets and gateway with internet routeing table. 
+  Create Secgroup for instances and ALB.
+   
+  Created by: Fredrik Nilsson, 2023-10-19
+  updated:
+    2023-10-20 - Added parameter for easier change KeyName and AvailabilityZone
+    2023-10-19 - Added stack unik VPC, subnet, ALB, Route with routetabels, AutoScaleGroup with policy
+  user unique settings : Login to AWS cli, update Parameter "KeyParameter" to your own unique keypair
 
-# Create SecGrp http
-  secGroupNameHTTP:
+Parameters:
+  KeyParameter:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Default: AWStest
+  AZparameter:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Default: eu-west-1a, eu-west-1b, eu-west-1c
+  ImageParameter:
+    Type: AWS::EC2::Image::Id
+    Default: ami-0dab0800aa38826f2
+
+Resources:
+
+# -NETWORKING-
+# Create VPC
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-VPC'
+# # Create Subnet A
+  subnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref myVPC
+      AvailabilityZone: { "Fn::Select" :[ "0", {"Ref": "AZparameter" }]}
+      CidrBlock: 10.0.10.0/24
+      MapPublicIpOnLaunch: True
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SubnetA'
+# # Create Subnet B
+  subnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref myVPC
+      AvailabilityZone: { "Fn::Select" :[ "1", {"Ref": "AZparameter" }]}
+      CidrBlock: 10.0.20.0/24
+      MapPublicIpOnLaunch: True
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SubnetB'
+# # Create Subnet C
+  subnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref myVPC
+      AvailabilityZone: { "Fn::Select" :[ "2", {"Ref": "AZparameter" }]}
+      CidrBlock: 10.0.30.0/24
+      MapPublicIpOnLaunch: True
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SubnetC'
+# Gateway
+  myInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-InternetGateway:'
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref myVPC
+      InternetGatewayId: !Ref myInternetGateway
+# Routes
+  RouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties: 
+      VpcId: !Ref myVPC
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-RouteTable'
+  routeName:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref myInternetGateway
+  mySubnetRouteTableAssociationA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: 
+        !Ref subnetA
+      RouteTableId:
+        Ref: RouteTable
+  mySubnetRouteTableAssociationB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        !Ref subnetB
+      RouteTableId:
+        Ref: RouteTable
+  mySubnetRouteTableAssociationC:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId:
+        !Ref subnetC
+      RouteTableId:
+        Ref: RouteTable
+
+# -Security Groups-
+# Create ALB-SecGrp http
+  ALBsecGroupNameHTTP:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: 'SecGrpHTTP'
-      GroupDescription: 'Allow HTTP - Anywhere'
+      GroupName: !Sub '${AWS::StackName}-ALB-SecGrpHTTP'
+      GroupDescription: 'AppLoadBalancer - Allow HTTP - Anywhere'
+      VpcId: !Ref myVPC
       SecurityGroupIngress:
         - IpProtocol: 'TCP'
           FromPort: 80
@@ -38,14 +131,29 @@ Resources:
           CidrIp: 0.0.0.0/0
       Tags:
         - Key: 'Name'
-          Value: 'SecGrpHTTP'
-
+          Value: !Sub '${AWS::StackName}-ALB-SecGrpHTTP'
+# Create SecGrp http
+  secGroupNameHTTP:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-SecGrpHTTP'
+      GroupDescription: 'Allow HTTP - Anywhere'
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref ALBsecGroupNameHTTP
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SecGrpHTTP'
 # Create SecGrp ssh
   secGroupNameSSH:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: 'SecGrpSSH'
+      GroupName: !Sub '${AWS::StackName}-SecGrpSSH'
       GroupDescription: 'Allow SSH - Anywhere'
+      VpcId: !Ref myVPC
       SecurityGroupIngress:
         - IpProtocol: 'TCP'
           FromPort: 22
@@ -53,37 +161,107 @@ Resources:
           CidrIp: 0.0.0.0/0
       Tags:
         - Key: 'Name'
-          Value: 'SecGrpSSH'
+          Value: !Sub '${AWS::StackName}-SecGrpSSH'
+
+# -TEMPLATE-
 # Create Launchtemplate
   launchTemplateName:
     Type: AWS::EC2::LaunchTemplate
     Properties:
-      LaunchTemplateName: 'Test2000'
+      LaunchTemplateName: !Sub '${AWS::StackName}-Test2000'
       LaunchTemplateData:
-        SecurityGroups:
+        KeyName:
+          Ref: KeyParameter
+        InstanceType: 't2.micro'
+        ImageId: !Ref "ImageParameter"
+        SecurityGroupIds:
           - !Ref secGroupNameSSH
           - !Ref secGroupNameHTTP
-        KeyName: 'AWStest'
-        InstanceType: 't2.micro'
-        ImageId: ami-0dab0800aa38826f2
+        Monitoring: 
+          Enabled: true
         UserData: !Base64 |
          #!/bin/bash
          dnf update -y && dnf install nginx -y
+         sed -i 's\<h1>Welcome to nginx!</h1>\<h1>Hello World</h1>' /usr/share/nginx/html/index.html
+         sed -i '/<h1>/a My name is Nilsson, Fredrik Nilsson' /usr/share/nginx/html/index.html
+         sed -i -e "/<p><em>/a Connected to server: $(hostname -s)" /usr/share/nginx/html/index.html
          systemctl start nginx && systemctl enable nginx
+
+# -AUTOSCALEGROUP-
 # Create AutoScaleGroup
   asg:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      AvailabilityZones: !GetAZs 'EU-West-1'
-      LaunchConfigurationName: 
-      MaxSize: 0
-      MinSize: 0
+      AutoScalingGroupName: !Sub "${AWS::StackName}-ASG"
+      MaxSize: '3'
+      MinSize: '1'
+      DesiredCapacity: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref launchTemplateName
+        Version: !GetAtt launchTemplateName.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref subnetA
+        - !Ref subnetB
+        - !Ref subnetC
+      MetricsCollection: 
+        - Granularity: 1Minute
+          Metrics: 
+            - GroupMinSize
+            - GroupMaxSize
+      TargetGroupARNs:
+        - !Ref MyTargetGroup
       Tags:
-        - Key: keyname
-          Value: value
-          PropagateAtLaunch: True|False
-# Assign TargetGroup
-  
-# Create Application Loadbalancer
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-ASG"
+          PropagateAtLaunch: false
+# Assign ScalingPolicy
+  MyScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      PolicyType: TargetTrackingScaling
+      AutoScalingGroupName: !Ref asg
+      EstimatedInstanceWarmup: 60
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: '80'
+        DisableScaleIn: false
+      Cooldown: 60  # Adjust the cooldown period as needed (in seconds)
 
-# 
+# -APP LOADBALANCER-
+# Create Application Loadbalancer
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties: 
+      IpAddressType: 'ipv4'
+      Name: !Sub "${AWS::StackName}-ALB"
+      Scheme: internet-facing
+      SecurityGroups: 
+        - !Ref ALBsecGroupNameHTTP
+      Subnets: 
+        - !Ref subnetA
+        - !Ref subnetB
+        - !Ref subnetC
+      Type: 'application'
+
+# Create Target Group
+  MyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${AWS::StackName}-TargetGroup'
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref myVPC
+
+# Port listning
+  HTTPlistener:
+   Type: 'AWS::ElasticLoadBalancingV2::Listener'
+   Properties:
+      DefaultActions:
+       - Type: forward
+         ForwardConfig:
+          TargetGroups:
+            - TargetGroupArn: !Ref MyTargetGroup
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: 'HTTP'
