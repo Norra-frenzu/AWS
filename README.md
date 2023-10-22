@@ -301,3 +301,6 @@ other command that can be useful is to be able to list the availability zones fo
 ```powershell
  aws ec2 describe-availability-zones --region us-west-1 --query 'AvailabilityZones[].ZoneName'
 ```
+
+## GitHub
+Link to Github repo: https://github.com/Norra-frenzu/AWS
