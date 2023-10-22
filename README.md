@@ -288,6 +288,7 @@ This loadbalancer is internet connected so it can connect to the internet and al
 ```
 #### Useful Commands
 To start and update a stack we can use following powershell command after install AWSCLI, guide for that can be found here: [Link](https://adamtheautomator.com/install-aws-cli-on-windows/)
+
 With the ```Deploy``` command we can both create and update exsisting completed stack, but can be change for ```create``` for only create stack. 
 ```powershell
 aws cloudformation deploy --template-file ./AWS/uppgift1.yaml --stack-name [paste your unique stackname here]
