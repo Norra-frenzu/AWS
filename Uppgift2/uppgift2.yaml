@@ -1,0 +1,6 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Here we create a apache, with wordpress, togther with a DB and EFS filesystem
+
+Parameters: 
+
+Resources: 

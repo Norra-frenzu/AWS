@@ -1,0 +1,32 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Setup one unik intances that is connected to defalt VPC
+Parameters: 
+  KeyName:
+    Description: 
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: AWStest 
+  ImageID:
+    Description: 
+    Type: AWS::EC2::Image::Id
+    Default: ami-0dab0800aa38826f2
+  ec2type:
+    Description: 
+    Type: String
+    Default: t2.micro
+
+Resources:
+  myEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: !Ref Keyname 
+      ImageId: !Ref ImageID
+      InstanceType: !Ref ec2type
+      Monitoring: true
+      SecurityGroupIds:
+        
+      UserData: !Base64 |
+        #!/bin/bash -ex
+        # put your script here
+      Tags:
+        - Key: Name
+          Value: ${AWS::StackName}-Wordpress
