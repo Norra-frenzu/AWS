@@ -1,9 +1,92 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: ---
+Description: Here we create a new EFS storage 
 
-Parameters: 
+Parameters:
+  MyZone:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Default: eu-west-1a, eu-west-1b, eu-west-1c
 
-Resources: 
+Resources:
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-VPC
+
+  SubA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: {"Fn::Select": ["0", "Ref": "MyZone"]}
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.10.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-SubnetA
+  SubB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: {"Fn::Select": ["1", "Ref": "MyZone"]}
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.20.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-SubnetB
+  SubC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: {"Fn::Select": ["2", "Ref": "MyZone"]}
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.30.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-SubnetC
+  SecGrpEFS:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-EFS
+      GroupDescription: "Allow EFS Anywhere"
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          ToPort: 2049
+          FromPort: 2049
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-EFS
+  MyEFS:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      BackupPolicy: 
+        Status: DISABLED
+      Encrypted: True
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-EFS
   
-
-Outputs:
+  MyEFSMountSubA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref MyEFS
+      SecurityGroups: 
+        - !Ref SecGrpEFS
+      SubnetId: !Ref SubA
+  MyEFSMountSubB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref MyEFS
+      SecurityGroups: 
+        - !Ref SecGrpEFS
+      SubnetId: !Ref SubB
+  MyEFSMountSubC:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref MyEFS
+      SecurityGroups: 
+        - !Ref SecGrpEFS
+      SubnetId: !Ref SubC

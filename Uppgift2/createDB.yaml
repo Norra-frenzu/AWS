@@ -1,44 +1,16 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Creata a S3-bucket for MySQL database togther with a static Web Site Server
-Parameters:
 
 Resources:
   rdsDBInstance:
     Type: AWS::RDS::DBInstance
     Properties:
-      AllocatedStorage: 
-      DBInstanceClass: 
-      AllowMajorVersionUpgrade: true|false
-      AutoMinorVersionUpgrade: true|false
-      AvailabilityZone: 
-      BackupRetentionPeriod: 
-      CharacterSetName: 
-      DBInstanceIdentifier: 
-      DBName: 
-      DBParameterGroupName: 
-      DBSecurityGroups: 
-        - db-sg-group
-      DBSnapshotIdentifier: 
-      DBSubnetGroupName: 
-      Engine: mysql
-      EngineVersion: 
-      Iops: 
-      KmsKeyId: 
-      LicenseModel: 
-      MasterUsername: SA
-      MasterUserPassword:  
-      MultiAZ: true|false
-      OptionGroupName: 
-      Port: 
-      PreferredBackupWindow: 
-      PreferredMaintenanceWindow: 
-      PubliclyAccessible: true|false
-      SourceDBInstanceIdentifier: 
-      StorageEncrypted: true|false
-      StorageType: 
-      VPCSecurityGroups:
-        - vpc-sg-id
-      Tags:
-        - Key: Name
-          Value: ${AWS::StackName}-DB
+      DBInstanceIdentifier: mydbinstance
+      DBName: "MyDB202310261431"
+      DBInstanceClass: db.t3.micro
+      AllocatedStorage: 50
+      Engine: MySQL
+      BackupRetentionPeriod: 0
+      MasterUsername: admin
+      MasterUserPassword: Skola123!
   
