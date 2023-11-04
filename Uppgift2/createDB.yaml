@@ -8,7 +8,7 @@ Resources:
       DBInstanceIdentifier: mydbinstance
       DBName: "MyDB202310261431"
       DBInstanceClass: db.t3.micro
-      AllocatedStorage: 50
+      AllocatedStorage: "50"
       Engine: MySQL
       BackupRetentionPeriod: 0
       MasterUsername: admin

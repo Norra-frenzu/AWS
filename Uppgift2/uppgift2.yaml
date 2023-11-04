@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Here we create a apache, with wordpress, togther with a DB and EFS filesystem
+Description: in this template we create a provision server for Apache with php where configure is stored on S3 EFS storage with a MySQL RDS services, togther with a loadbalancer and AutoScaling group
 
 Parameters: 
 
