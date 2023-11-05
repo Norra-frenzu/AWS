@@ -2,5 +2,431 @@ AWSTemplateFormatVersion: 2010-09-09
 Description: in this template we create a provision server for Apache with php where configure is stored on S3 EFS storage with a MySQL RDS services, togther with a loadbalancer and AutoScaling group
 
 Parameters: 
+  MyZone:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Default: eu-west-1a, eu-west-1b, eu-west-1c
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: AWStest 
+  ImageID: 
+    Type: AWS::EC2::Image::Id
+    Default: ami-0dab0800aa38826f2
+  ec2type: 
+    Type: String
+    Default: t2.micro
+  MasterUsername:
+    Type: String
+    Default: root
+  MasterUserPassword:
+    Type: String
+    Default: Skola123!
 
 Resources: 
+### Networking ###
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-VPC
+
+  SubA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: {"Fn::Select": ["0", "Ref": "MyZone"]}
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.10.0/24
+      MapPublicIpOnLaunch: True
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-SubnetA
+    DependsOn: myVPC
+  SubB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: {"Fn::Select": ["1", "Ref": "MyZone"]}
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.20.0/24
+      MapPublicIpOnLaunch: True
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-SubnetB
+    DependsOn: myVPC
+  SubC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: {"Fn::Select": ["2", "Ref": "MyZone"]}
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.30.0/24
+      MapPublicIpOnLaunch: True
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-SubnetC
+    DependsOn: myVPC
+
+### Internet Gateway ###
+  igwName:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-InternetGateWay'
+    DependsOn: myVPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref myVPC
+      InternetGatewayId: !Ref igwName
+    DependsOn: igwName
+
+
+### Route table ###
+  routeTableName:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref myVPC
+      Tags:
+        - Key: 'name'
+          Value: !Sub '${AWS::StackName}-RouteTable'
+    DependsOn: igwName
+  routeName:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref routeTableName
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref igwName
+    DependsOn: routeTableName
+  routeTableAssocNameA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubA
+      RouteTableId: !Ref routeTableName
+    DependsOn: routeName
+  routeTableAssocNameB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubB
+      RouteTableId: !Ref routeTableName
+    DependsOn: routeTableAssocNameA
+  routeTableAssocNameC:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubC
+      RouteTableId: !Ref routeTableName
+    DependsOn: routeTableAssocNameB
+
+### EFS ###
+  SecGrpEFS:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${AWS::StackName}-EFS
+      GroupDescription: "Allow EFS Anywhere"
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          ToPort: 2049
+          FromPort: 2049
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-EFS
+    DependsOn: SubC
+  MyEFS:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      BackupPolicy: 
+        Status: DISABLED
+      Encrypted: True
+      PerformanceMode: generalPurpose
+      ThroughputMode: bursting
+      FileSystemTags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-EFS
+    DependsOn: SecGrpEFS
+  
+  MyEFSMountSubA:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref MyEFS
+      SecurityGroups: 
+        - !Ref SecGrpEFS
+        - !Ref secGroupNameSSH
+      SubnetId: !Ref SubA
+    DependsOn: MyEFS
+  MyEFSMountSubB:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref MyEFS
+      SecurityGroups: 
+        - !Ref SecGrpEFS
+        - !Ref secGroupNameSSH
+      SubnetId: !Ref SubB
+    DependsOn: MyEFSMountSubA
+  MyEFSMountSubC:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref MyEFS
+      SecurityGroups: 
+        - !Ref SecGrpEFS
+        - !Ref secGroupNameSSH
+      SubnetId: !Ref SubC
+    DependsOn: MyEFSMountSubB
+
+#### EC2 Instance
+# Create SecGrp HTTP
+  secGroupNameHTTP:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-SecGrpHTTP'
+      GroupDescription: 'Allow HTTP'
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SecGrpHTTP'
+    DependsOn: myVPC
+# Create SecGrp ssh
+  secGroupNameSSH:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-SecGrpSSH'
+      GroupDescription: 'Allow SSH - Anywhere'
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SecGrpSSH'
+    DependsOn: myVPC
+# Create ALB-SecGrp http
+  ALBsecGroupNameHTTP:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-ALB-SecGrpHTTP'
+      GroupDescription: 'AppLoadBalancer - Allow HTTP - Anywhere'
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-ALB-SecGrpHTTP'
+
+
+  myEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: 
+        Ref: KeyName
+      ImageId: !Ref ImageID
+      InstanceType: !Ref ec2type
+      Monitoring: true
+      SubnetId: !Ref SubA
+      SecurityGroupIds:
+        - !Ref secGroupNameSSH
+        - !Ref secGroupNameHTTP 
+      UserData: 
+        Fn::Base64: 
+          Fn::Sub: |
+            #!/bin/bash -ex
+            yum update -y
+            yum install amazon-efs-utils -y
+            mkdir -p /var/www
+            echo ${MyEFS.FileSystemId} >> /var/www/test
+            mount -t efs -o tls ${MyEFS.FileSystemId}:/ /var/www
+            yum install -y httpd wget php-fpm php-mysqli php-json php php-devel
+            systemctl start httpd
+            systemctl enable httpd
+            chown -R ec2-user:apache /var/www
+            chmod 2775 /var/www && find /var/www -type d -exec sudo chmod 2775 {} \;
+            find /var/www -type f -exec sudo chmod 0664 {} \;
+            yum install -y mariadb105
+            wget -P /home/ec2-user/ https://wordpress.org/latest.tar.gz
+            tar -xzf /home/ec2-user/latest.tar.gz -C /home/ec2-user/
+            cp /home/ec2-user/wordpress/wp-config-sample.php /home/ec2-user/wordpress/wp-config.php
+            sed -i 's/username_here/${MasterUsername}/' /home/ec2-user/wordpress/wp-config.php
+            sed -i 's/password_here/${MasterUserPassword}/' /home/ec2-user/wordpress/wp-config.php
+            sed -i 's/database_name_here/DB/' /home/ec2-user/wordpress/wp-config.php
+            sed -i "s/localhost/${rdsDBInstance.Endpoint.Address}/" /home/ec2-user/wordpress/wp-config.php
+            cp -r /home/ec2-user/wordpress/* /var/www/html/
+            service httpd restart
+            echo ${rdsDBInstance.Endpoint.Address} >> /var/www/test
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-EFS
+    DependsOn: rdsDBInstance
+
+### SEC Group MySQL ###
+  secGroupNameMySQL:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-SecGrpMySQL'
+      GroupDescription: 'Allow SSH - Anywhere'
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SecGrpSSH'
+    DependsOn: myVPC
+  rdsDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub 'Setup ${AWS::StackName}-SubnetGroup'
+      SubnetIds:
+        - !Ref SubA
+        - !Ref SubB
+        - !Ref SubC
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SubnetGroup'
+    DependsOn: routeTableAssocNameC
+    
+### DB ###
+  rdsDBInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: '50'
+      DBInstanceClass: db.t3.micro
+      MultiAZ: true
+      BackupRetentionPeriod: 0
+      DBInstanceIdentifier: !Sub '${AWS::StackName}-mydbinstance'
+      DBName: 'DB'
+      DBSubnetGroupName: !Ref rdsDBSubnetGroup
+      Engine: mysql
+      MasterUsername: !Ref MasterUsername
+      MasterUserPassword: !Ref MasterUserPassword
+      Port: 3306 
+      PubliclyAccessible: true
+      StorageEncrypted: true
+      VPCSecurityGroups:
+        - !Ref secGroupNameMySQL
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-DB-Test'
+    DependsOn: MyEFS
+
+# -TEMPLATE-
+# Create Launchtemplate
+  launchTemplateName:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Sub '${AWS::StackName}-WordPress'
+      LaunchTemplateData:
+        KeyName:
+          Ref: KeyName
+        InstanceType: 't2.micro'
+        ImageId: !Ref "ImageID"
+        SecurityGroupIds:
+          - !Ref secGroupNameSSH
+          - !Ref secGroupNameHTTP
+        Monitoring: 
+          Enabled: true
+        UserData: 
+          Fn::Base64: 
+            Fn::Sub: |
+              #!/bin/bash
+              yum update -y
+              yum install amazon-efs-utils -y
+              yum install -y httpd wget php-fpm php-mysqli php-json php php-devel
+              mount -t efs -o tls ${MyEFS.FileSystemId}:/ /var/www
+              systemctl restart httpd.service
+    DependsOn: myEC2Instance
+
+# -AUTOSCALEGROUP-
+# Create AutoScaleGroup
+  asg:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: !Sub "${AWS::StackName}-ASG"
+      MaxSize: '3'
+      MinSize: '1'
+      DesiredCapacity: '1'
+      LaunchTemplate:
+        LaunchTemplateId: !Ref launchTemplateName
+        Version: !GetAtt launchTemplateName.LatestVersionNumber
+      VPCZoneIdentifier:
+        - !Ref SubA
+        - !Ref SubB
+        - !Ref SubC
+      MetricsCollection: 
+        - Granularity: 1Minute
+          Metrics: 
+            - GroupMinSize
+            - GroupMaxSize
+      TargetGroupARNs:
+        - !Ref MyTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-ASG"
+          PropagateAtLaunch: false
+    DependsOn: myEC2Instance
+# Assign ScalingPolicy
+  MyScaleUpPolicy:
+    Type: AWS::AutoScaling::ScalingPolicy
+    Properties:
+      PolicyType: TargetTrackingScaling
+      AutoScalingGroupName: !Ref asg
+      EstimatedInstanceWarmup: 60
+      TargetTrackingConfiguration:
+        PredefinedMetricSpecification:
+          PredefinedMetricType: ASGAverageCPUUtilization
+        TargetValue: '80'
+        DisableScaleIn: false
+      Cooldown: 60  # Adjust the cooldown period as needed (in seconds)
+    DependsOn: myEC2Instance
+
+# -APP LOADBALANCER-
+# Create Application Loadbalancer
+  ALB:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties: 
+      IpAddressType: 'ipv4'
+      Name: !Sub "${AWS::StackName}-ALB"
+      Scheme: internet-facing
+      SecurityGroups: 
+        - !Ref ALBsecGroupNameHTTP
+      Subnets: 
+        - !Ref SubA
+        - !Ref SubB
+        - !Ref SubC
+      Type: 'application'
+    DependsOn: myEC2Instance
+
+# Create Target Group
+  MyTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${AWS::StackName}-TargetGroup'
+      Port: 80
+      Protocol: HTTP
+      VpcId: !Ref myVPC
+
+# Port listning
+  HTTPlistener:
+   Type: 'AWS::ElasticLoadBalancingV2::Listener'
+   Properties:
+      DefaultActions:
+       - Type: forward
+         ForwardConfig:
+          TargetGroups:
+            - TargetGroupArn: !Ref MyTargetGroup
+      LoadBalancerArn: !Ref ALB
+      Port: 80
+      Protocol: 'HTTP'
+   DependsOn: MyTargetGroup

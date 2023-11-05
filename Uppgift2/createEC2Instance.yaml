@@ -12,7 +12,6 @@ Parameters:
     Default: t2.micro
 
 Resources:
-
   secGroupNameHTTP:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -22,6 +21,7 @@ Resources:
         - IpProtocol: 'TCP'
           FromPort: 80
           ToPort: 80
+          CidrIp: 0.0.0.0/0
       Tags:
         - Key: 'Name'
           Value: !Sub '${AWS::StackName}-SecGrpHTTP'
