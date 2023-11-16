@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: 2010-09-09
-Description: Setup one unik intances that is connected to defalt VPC
+Description: Setup one unique intances that is connected to default VPC
 Parameters: 
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
@@ -48,12 +48,20 @@ Resources:
       ImageId: !Ref ImageID
       InstanceType: !Ref ec2type
       Monitoring: true
+      IamInstanceProfile: 'CodeDeployAgentRole'
       SecurityGroupIds:
         - !Ref secGroupNameSSH
         - !Ref secGroupNameHTTP 
       UserData: !Base64 |
-        #!/bin/bash -ex
-        # put your script here
+        #!/bin/bash
+        yum update -y
+        yum install ruby -y
+        wget https://aws-codedeploy-us-west-2.s3.us-west-2.amazonaws.com/latest/install
+        chmod +x ./install
+        sudo ./install auto
+        
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-Wordpress
+        - Key: Deploy
+          Value: Pipe
