@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: ---
+
+Parameters: 
+
+Resources: 
+  s3Bucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: PublicRead
+      BucketName: 
+      CorsConfiguration: 
+      LifecycleConfiguration: 
+      NotificationConfiguration: 
+      VersioningConfiguration: 
+      WebsiteConfiguration: 
+      Tags:
+        - Key: key
+          Value: value
+  
+  s3BucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: 
+      PolicyDocument: 
+  
+  APIgateway:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      ApiKeyRequired: Boolean
+      AuthorizationScopes: 
+        - String
+      AuthorizationType: String
+      AuthorizerId: String
+      HttpMethod: String
+      Integration: 
+        Integration
+      MethodResponses: 
+        - MethodResponse
+      OperationName: String
+      RequestModels: 
+        Key: Value
+      RequestParameters: 
+        Key: Value
+      RequestValidatorId: String
+      ResourceId: String
+      RestApiId: String
+  
+  lambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: 
+      FunctionName: 
+      Handler: 
+      KmsKeyArn: 
+      MemorySize: 128
+      Role: role-arn
+      Runtime: python3.6
+      Timeout: 
+      VpcConfig:
+        SecurityGroupIds:
+          - sg-id
+        SubnetIds:
+          - subnet-id
+      Environment:
+        Variables:
+          key1: value1 # A map of key-value pairs that the Lambda function can access
+      Code:
+        S3Bucket: 
+        S3Key: 
+        S3ObjectVersion: 
+        ZipFile: 
+      Tags:
+        - Key: keyname
+          Value: value
+
+  dynamodbTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - 
+          attribute definition
+      GlobalSecondaryIndexes:
+        - 
+          global secondary indexes
+      LocalSecondaryIndexes:
+        - 
+          local secondary indexes
+      KeySchema:
+        - 
+          key schema
+      ProvisionedThroughput: 
+      TableName: 
+      Tags:
+        - Key: key
+          Value: value
+Outputs:

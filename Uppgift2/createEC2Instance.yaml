@@ -3,7 +3,7 @@ Description: Setup one unik intances that is connected to defalt VPC
 Parameters: 
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
-    Default: AWStest 
+    Default: fredrik 
   ImageID: 
     Type: AWS::EC2::Image::Id
     Default: ami-0dab0800aa38826f2
