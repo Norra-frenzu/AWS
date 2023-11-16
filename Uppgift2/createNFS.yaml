@@ -5,12 +5,25 @@ Parameters:
   MyZone:
     Type: List<AWS::EC2::AvailabilityZone::Name>
     Default: eu-west-1a, eu-west-1b, eu-west-1c
+  KeyName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Default: AWStest 
+  ImageID: 
+    Type: AWS::EC2::Image::Id
+    Default: ami-0dab0800aa38826f2
+  ec2type: 
+    Type: String
+    Default: t2.micro
+
 
 Resources:
+
+### Networking ###
   myVPC:
     Type: AWS::EC2::VPC
     Properties:
       CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
       EnableDnsSupport: true
       Tags:
         - Key: Name
@@ -22,27 +35,86 @@ Resources:
       AvailabilityZone: {"Fn::Select": ["0", "Ref": "MyZone"]}
       VpcId: !Ref myVPC
       CidrBlock: 10.0.10.0/24
+      MapPublicIpOnLaunch: True
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-SubnetA
+    DependsOn: myVPC
   SubB:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: {"Fn::Select": ["1", "Ref": "MyZone"]}
       VpcId: !Ref myVPC
       CidrBlock: 10.0.20.0/24
+      MapPublicIpOnLaunch: True
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-SubnetB
+    DependsOn: myVPC
   SubC:
     Type: AWS::EC2::Subnet
     Properties:
       AvailabilityZone: {"Fn::Select": ["2", "Ref": "MyZone"]}
       VpcId: !Ref myVPC
       CidrBlock: 10.0.30.0/24
+      MapPublicIpOnLaunch: True
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-SubnetC
+    DependsOn: myVPC
+
+### Internet Gateway ###
+  igwName:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-InternetGateWay'
+    DependsOn: myVPC
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref myVPC
+      InternetGatewayId: !Ref igwName
+    DependsOn: igwName
+
+
+### Route table ###
+  routeTableName:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref myVPC
+      Tags:
+        - Key: 'name'
+          Value: !Sub '${AWS::StackName}-RouteTable'
+    DependsOn: igwName
+  routeName:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref routeTableName
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref igwName
+    DependsOn: routeTableName
+  routeTableAssocNameA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubA
+      RouteTableId: !Ref routeTableName
+    DependsOn: routeName
+  routeTableAssocNameB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubB
+      RouteTableId: !Ref routeTableName
+    DependsOn: routeTableAssocNameA
+  routeTableAssocNameC:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SubC
+      RouteTableId: !Ref routeTableName
+    DependsOn: routeTableAssocNameB
+
+### EFS ###
   SecGrpEFS:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -57,6 +129,7 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-EFS
+    DependsOn: SubC
   MyEFS:
     Type: AWS::EFS::FileSystem
     Properties:
@@ -68,6 +141,7 @@ Resources:
       FileSystemTags:
         - Key: Name
           Value: !Sub ${AWS::StackName}-EFS
+    DependsOn: SecGrpEFS
   
   MyEFSMountSubA:
     Type: AWS::EFS::MountTarget
@@ -75,18 +149,86 @@ Resources:
       FileSystemId: !Ref MyEFS
       SecurityGroups: 
         - !Ref SecGrpEFS
+        - !Ref secGroupNameSSH
       SubnetId: !Ref SubA
+    DependsOn: MyEFS
   MyEFSMountSubB:
     Type: AWS::EFS::MountTarget
     Properties:
       FileSystemId: !Ref MyEFS
       SecurityGroups: 
         - !Ref SecGrpEFS
+        - !Ref secGroupNameSSH
       SubnetId: !Ref SubB
+    DependsOn: MyEFSMountSubA
   MyEFSMountSubC:
     Type: AWS::EFS::MountTarget
     Properties:
       FileSystemId: !Ref MyEFS
       SecurityGroups: 
         - !Ref SecGrpEFS
+        - !Ref secGroupNameSSH
       SubnetId: !Ref SubC
+    DependsOn: MyEFSMountSubB
+
+#### EC2 Instance
+# Create SecGrp HTTP
+  secGroupNameHTTP:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-SecGrpHTTP'
+      GroupDescription: 'Allow HTTP'
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SecGrpHTTP'
+    DependsOn: myVPC
+# Create SecGrp ssh
+  secGroupNameSSH:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-SecGrpSSH'
+      GroupDescription: 'Allow SSH - Anywhere'
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SecGrpSSH'
+    DependsOn: myVPC
+
+  myEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      KeyName: 
+        Ref: KeyName
+      ImageId: !Ref ImageID
+      InstanceType: !Ref ec2type
+      Monitoring: true
+      SubnetId: !Ref SubA
+      SecurityGroupIds:
+        - !Ref secGroupNameSSH
+        - !Ref secGroupNameHTTP 
+      UserData: 
+        Fn::Base64: 
+          Fn::Sub: |
+            #!/bin/bash -ex
+            yum update -y
+            yum install amazon-efs-utils -y
+            mkdir -p /usr/share/nginx
+            echo ${MyEFS.FileSystemId} >> /usr/share/nginx/test
+            mount -t efs -o tls ${MyEFS.FileSystemId}:/ /usr/share/nginx
+            yum install nginx -y
+            systemctl enable nginx.service
+      Tags:
+        - Key: Name
+          Value: !Sub ${AWS::StackName}-EFS
+    DependsOn: MyEFSMountSubC

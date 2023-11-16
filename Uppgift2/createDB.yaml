@@ -1,16 +1,211 @@
 AWSTemplateFormatVersion: 2010-09-09
 Description: Creata a S3-bucket for MySQL database togther with a static Web Site Server
 
+Parameters:
+  KeyParameter:
+    Type: "AWS::EC2::KeyPair::KeyName"
+    Default: AWStest
+  AZparameter:
+    Type: List<AWS::EC2::AvailabilityZone::Name>
+    Default: eu-west-1a, eu-west-1b, eu-west-1c
+
+
 Resources:
+  # rdsDBInstance:
+  #   Type: AWS::RDS::DBInstance
+  #   Properties:
+  #     DBInstanceIdentifier: mydbinstance
+  #     DBName: "MyDB202310261431"
+  #     DBInstanceClass: db.t3.micro
+  #     AllocatedStorage: "50"
+  #     Engine: MySQL
+  #     BackupRetentionPeriod: 0
+  #     MasterUsername: admin
+  #     MasterUserPassword: Skola123!
+
+#### Networking ####
+### VPC ###
+  myVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-myVPC'
+## Subnet A ##
+  subnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: { "Fn::Select" :[ "0", {"Ref": "AZparameter" }]}
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.10.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-SubnetA'
+    DependsOn: myVPC
+ ## Subnet B ##
+  subnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: { "Fn::Select" :[ "1", {"Ref": "AZparameter" }]}
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.20.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-SubnetB'
+    DependsOn: myVPC
+ ## Subnet C ##
+  subnetC:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: { "Fn::Select" :[ "2", {"Ref": "AZparameter" }]}
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.30.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${AWS::StackName}-SubnetC'
+    DependsOn: myVPC
+
+
+### Internet Gateway ###
+  igwName:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-InternetGateWay'
+  AttachGateway:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref myVPC
+      InternetGatewayId: !Ref igwName
+    DependsOn: myVPC
+
+
+### Route table ###
+  routeTableName:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref myVPC
+      Tags:
+        - Key: 'name'
+          Value: !Sub '${AWS::StackName}-RouteTable'
+    DependsOn: myVPC
+  routeName:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref routeTableName
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref igwName
+    DependsOn: routeTableName
+  routeTableAssocNameA:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref subnetA
+      RouteTableId: !Ref routeTableName
+    DependsOn: routeName
+  routeTableAssocNameB:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref subnetB
+      RouteTableId: !Ref routeTableName
+    DependsOn: routeTableAssocNameA
+  routeTableAssocNameC:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref subnetC
+      RouteTableId: !Ref routeTableName
+    DependsOn: routeTableAssocNameB
+
+
+### SEC Group HTTP ###
+  secGroupNameHTTP:
+      Type: AWS::EC2::SecurityGroup
+      Properties:
+        GroupName: !Sub '${AWS::StackName}-SecGrpHTTP'
+        GroupDescription: 'Allow HTTP - Anywhere'
+        VpcId: !Ref myVPC
+        SecurityGroupIngress:
+          - IpProtocol: 'TCP'
+            FromPort: 80
+            ToPort: 80
+        Tags:
+          - Key: 'Name'
+            Value: !Sub '${AWS::StackName}-SecGrpHTTP'
+      DependsOn: myVPC
+
+
+### SEC Group SSH ###
+  secGroupNameSSH:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-SecGrpSSH'
+      GroupDescription: 'Allow SSH - Anywhere'
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SecGrpSSH'
+    DependsOn: myVPC
+
+### SEC Group MySQL ###
+  secGroupNameMySQL:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-SecGrpMySQL'
+      GroupDescription: 'Allow SSH - Anywhere'
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+        - IpProtocol: 'TCP'
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SecGrpSSH'
+    DependsOn: myVPC
+
+### RDS intances ###
+  rdsDBSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: !Sub 'Setup ${AWS::StackName}-SubnetGroup'
+      SubnetIds:
+        - !Ref subnetA
+        - !Ref subnetB
+        - !Ref subnetC
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-SubnetGroup'
+    DependsOn: routeTableAssocNameC
+    
+
   rdsDBInstance:
     Type: AWS::RDS::DBInstance
     Properties:
-      DBInstanceIdentifier: mydbinstance
-      DBName: "MyDB202310261431"
+      AllocatedStorage: '50'
       DBInstanceClass: db.t3.micro
-      AllocatedStorage: 50
-      Engine: MySQL
+      MultiAZ: true
       BackupRetentionPeriod: 0
-      MasterUsername: admin
-      MasterUserPassword: Skola123!
-  
+      DBInstanceIdentifier: !Sub '${AWS::StackName}-mydbinstance'
+      DBName: 'DB'
+      DBSubnetGroupName: !Ref rdsDBSubnetGroup
+      Engine: mysql
+      MasterUsername: 'root'
+      MasterUserPassword: 'Skola123!'
+      Port: 3306 
+      PubliclyAccessible: true
+      StorageEncrypted: true
+      VPCSecurityGroups:
+        - !Ref secGroupNameHTTP
+        - !Ref secGroupNameMySQL
+      Tags:
+        - Key: 'Name'
+          Value: !Sub '${AWS::StackName}-DB-Test'
+    DependsOn: rdsDBSubnetGroup
