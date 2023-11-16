@@ -3,7 +3,7 @@ Description: Setup one unique intances that is connected to default VPC
 Parameters: 
   KeyName:
     Type: AWS::EC2::KeyPair::KeyName
-    Default: AWStest 
+    Default:  fredrik
   ImageID: 
     Type: AWS::EC2::Image::Id
     Default: ami-0dab0800aa38826f2
@@ -48,17 +48,13 @@ Resources:
       ImageId: !Ref ImageID
       InstanceType: !Ref ec2type
       Monitoring: true
-      IamInstanceProfile: 'CodeDeployAgentRole'
       SecurityGroupIds:
         - !Ref secGroupNameSSH
         - !Ref secGroupNameHTTP 
       UserData: !Base64 |
         #!/bin/bash
         yum update -y
-        yum install ruby -y
-        wget https://aws-codedeploy-us-west-2.s3.us-west-2.amazonaws.com/latest/install
-        chmod +x ./install
-        sudo ./install auto
+        yum install -y docker
         
       Tags:
         - Key: Name
