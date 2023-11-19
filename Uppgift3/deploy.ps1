@@ -276,22 +276,23 @@ $CodePipelinePolicyArn = (aws iam list-policies --query "Policies[?PolicyName=='
 $CodePipelineRoleArn = (aws iam list-roles --query "Roles[?RoleName=='$IAMCodePipeline'].{ARN:Arn}" --output text)
 aws iam attach-role-policy --role-name "$IAMCodePipeline" --policy-arn $CodePipelinePolicyArn
 
-if ((Test-Path .\pipelineconfig2.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/codebuild.json -OutFile .\pipelineconfig2.json}
-(Get-Content .\pipelineconfig2.json) -replace "<Pipeline-name>", "$CodePipeline" | Set-Content .\pipelineconfig2.json
-(Get-Content .\pipelineconfig2.json) -replace "<account-id>", "$accountID" | Set-Content .\pipelineconfig2.json
-(Get-Content .\pipelineconfig2.json) -replace "<Region>", "$Region" | Set-Content .\pipelineconfig2.json
-(Get-Content .\pipelineconfig2.json) -replace "<ECS-repo>", "$ECSrepo" | Set-Content .\pipelineconfig2.json
-(Get-Content .\pipelineconfig2.json) -replace "<Cluster-name>", "$ECScluster" | Set-Content .\pipelineconfig2.json
-(Get-Content .\pipelineconfig2.json) -replace "<Cluster-service>", "$ECSservice" | Set-Content .\pipelineconfig2.json
-(Get-Content .\pipelineconfig2.json) -replace "<Build-arn>", "$CodePipelineRoleArn" | Set-Content .\pipelineconfig2.json
-(Get-Content .\pipelineconfig2.json) -replace "<s3-bucket>", "$S3BucketName" | Set-Content .\pipelineconfig2.json
+if ((Test-Path .\pipelineconfigV2.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/pipelineconfigV2.json -OutFile .\pipelineconfigV2.json}
+(Get-Content .\pipelineconfigV2.json) -replace "<Pipeline-name>", "$CodePipeline" | Set-Content .\pipelineconfigV2.json
+(Get-Content .\pipelineconfigV2.json) -replace "<account-id>", "$accountID" | Set-Content .\pipelineconfigV2.json
+(Get-Content .\pipelineconfigV2.json) -replace "<Region>", "$Region" | Set-Content .\pipelineconfigV2.json
+(Get-Content .\pipelineconfigV2.json) -replace "<ECS-repo>", "$ECSrepo" | Set-Content .\pipelineconfigV2.json
+(Get-Content .\pipelineconfigV2.json) -replace "<Cluster-name>", "$ECScluster" | Set-Content .\pipelineconfigV2.json
+(Get-Content .\pipelineconfigV2.json) -replace "<Cluster-service>", "$ECSservice" | Set-Content .\pipelineconfigV2.json
+(Get-Content .\pipelineconfigV2.json) -replace "<Build-arn>", "$CodePipelineRoleArn" | Set-Content .\pipelineconfigV2.json
+(Get-Content .\pipelineconfigV2.json) -replace "<s3-bucket>", "$S3BucketName" | Set-Content .\pipelineconfigV2.json
 
-write-host -ForegroundColor Yellow "Now for the real pipeline"
+
 
 
 
 
 # Load-balancer
+write-host -ForegroundColor "Prepering Secgrp, load-balancer and target-group"
 
 aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text
 
@@ -301,8 +302,10 @@ aws ec2 authorize-security-group-ingress --group-name "$SecgrpLB" --protocol tcp
 aws elbv2 create-load-balancer --name $LBName --subnets $subnet[0] $subnet[1] $subnet[2] --security-groups (aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text) --region $Region
 
 aws elbv2 create-target-group --name $LBgrpName --protocol HTTP --port 80 --target-type ip --vpc-id $VpcID --region $Region
-(Get-Content .\pipelineconfig2.json) -replace "<listenerArns>", "$(aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(DNSName, '$LBname')].DNSName" --output text)" | Set-Content .\pipelineconfig2.json
-(Get-Content .\pipelineconfig2.json) -replace "<targetGroups>", "$LBgrpName" | Set-Content .\pipelineconfig2.json
+(Get-Content .\pipelineconfigV2.json) -replace "<listenerArns>", "$(aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(DNSName, '$LBname')].DNSName" --output text)" | Set-Content .\pipelineconfigV2.json
+(Get-Content .\pipelineconfigV2.json) -replace "<targetGroups>", "$LBgrpName" | Set-Content .\pipelineconfigV2.json
 
 
-aws codepipeline create-pipeline --cli-input-json file://pipelineconfig2.json
+write-host -ForegroundColor Yellow "Now for the real pipeline"
+
+aws codepipeline create-pipeline --cli-input-json file://pipelineconfigV2.json
