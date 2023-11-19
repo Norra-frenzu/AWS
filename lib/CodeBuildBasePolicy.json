@@ -4,8 +4,8 @@
         {
             "Effect": "Allow",
             "Resource": [
-                "arn:aws:logs:<Region:<account-id>:log-group:/aws/codebuild/<registry uri>",
-                "arn:aws:logs:<Region>:<account-id>:log-group:/aws/codebuild/<registry uri>:*"
+                "arn:aws:logs:<Region:<account-id>:log-group:/aws/codebuild/<repo>",
+                "arn:aws:logs:<Region>:<account-id>:log-group:/aws/codebuild/<repo>:*"
             ],
             "Action": [
                 "logs:CreateLogGroup",
@@ -45,7 +45,7 @@
                 "codebuild:BatchPutCodeCoverages"
             ],
             "Resource": [
-                "arn:aws:codebuild:<Region>:<account-id>:report-group/<registry uri>-*"
+                "arn:aws:codebuild:<Region>:<account-id>:report-group/<repo>-*"
             ]
         }
     ]
