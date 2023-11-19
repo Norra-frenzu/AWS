@@ -1,0 +1,118 @@
+{
+  "pipeline": {
+    "name": "<Pipeline-name>",
+    "roleArn": "<Build-Arn>",
+    "artifactBucket": "<s3-bucket>",
+    "stages": [
+      {
+        "name": "Source",
+        "actions": [
+          {
+            "name": "SourceAction",
+            "actionTypeId": {
+              "category": "Source",
+              "owner": "AWS",
+              "version": "1",
+              "provider": "CodeCommit"
+            },
+            "configuration": {
+              "RepositoryName": "<ECS-repo>",
+              "BranchName": "master"
+            },
+            "outputArtifacts": [
+              {
+                "name": "SourceOutput"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Build",
+        "actions": [
+          {
+            "name": "BuildAction",
+            "actionTypeId": {
+              "category": "Build",
+              "owner": "AWS",
+              "version": "1",
+              "provider": "CodeBuild"
+            },
+            "configuration": {
+              "ProjectName": "<ECS-repo>"
+            },
+            "inputArtifacts": [
+              {
+                "name": "SourceOutput"
+              }
+            ],
+            "outputArtifacts": [
+              {
+                "name": "BuildOutput"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "Deploy",
+        "actions": [
+          {
+            "name": "DeployAction",
+            "actionTypeId": {
+              "category": "Deploy",
+              "owner": "AWS",
+              "version": "1",
+              "provider": "CodeDeployToECS"
+            },
+            "configuration": {
+              "ClusterName": "<Cluster-name>",
+              "ServiceName": "<Cluster-service>",
+              "FileName": "imagedefinitions.json"
+            },
+            "inputArtifacts": [
+              {
+                "name": "BuildOutput"
+              }
+            ],
+            "runOrder": 1
+          },
+          {
+            "name": "CreateLoadBalancer",
+            "actionTypeId": {
+              "category": "Deploy",
+              "owner": "AWS",
+              "version": "1",
+              "provider": "CodeDeployToECS"
+            },
+            "configuration": {
+              "ActionMode": "CREATE_SERVICE",
+              "ClusterName": "<Cluster-name>",
+              "ServiceName": "<Cluster-service>",
+              "LoadBalancerInfo": {
+                "targetGroupPairInfoList": [
+                  {
+                    "targetGroups": [
+                      {
+                        "name": "<targetGroups>"
+                      }
+                    ],
+                    "prodTrafficRoute": {
+                      "listenerArns": ["<listenerArns>"]
+                    }
+                  }
+                ]
+              }
+            },
+            "inputArtifacts": [
+              {
+                "name": "BuildOutput"
+              }
+            ],
+            "runOrder": 2
+          }
+        ]
+      }
+    ]
+  }
+}

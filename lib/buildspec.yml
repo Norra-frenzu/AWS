@@ -8,7 +8,7 @@ phases:
       - IMAGE_NAME=<image name>
       - REGION=<region>
       # Fill in ECS information
-      - CONTAINER_NAME=MyContainerName # TaskDefinition: container definition name (Wrapper for imageUri)
+      - CONTAINER_NAME=<MyContainerName> # TaskDefinition: container definition name (Wrapper for imageUri)
       # -----------------------
       - IMAGE=$REGISTRY_URI/$IMAGE_NAME
       - COMMIT=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-8)

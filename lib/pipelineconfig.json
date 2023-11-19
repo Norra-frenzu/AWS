@@ -1,0 +1,80 @@
+{
+  "pipeline": {
+    "name": "<Pipeline-name>",
+    "roleArn": "<Build-Arn>",
+    "stages": [
+      {
+        "name": "Source",
+        "actions": [
+          {
+            "name": "SourceAction",
+            "actionTypeId": {
+              "category": "Source",
+              "owner": "AWS",
+              "version": "1",
+              "provider": "CodeCommit"
+            },
+            "configuration": {
+              "RepositoryName": "<ECS-repo>",
+              "BranchName": "master"
+            },
+            "outputArtifacts": [
+              {
+                "name": "SourceOutput"
+              }
+            ],
+            "runOrder": 1
+          }
+        ]
+      },
+      {
+        "name": "BuildAndDeploy",
+        "actions": [
+          {
+            "name": "BuildAndDeployAction",
+            "actionTypeId": {
+              "category": "Build",
+              "owner": "AWS",
+              "version": "1",
+              "provider": "CodeBuild"
+            },
+            "configuration": {
+              "ProjectName": "<ECS-repo>"
+            },
+            "inputArtifacts": [
+              {
+                "name": "SourceOutput"
+              }
+            ],
+            "outputArtifacts": [
+              {
+                "name": "BuildOutput"
+              }
+            ],
+            "runOrder": 1
+          },
+          {
+            "name": "DeployAction",
+            "actionTypeId": {
+              "category": "Deploy",
+              "owner": "AWS",
+              "version": "1",
+              "provider": "ECS"
+            },
+            "configuration": {
+              "ClusterName": "<Cluster-name>",
+              "ServiceName": "<Cluster-service>",
+              "FileName": "imagedefinitions.json"
+            },
+            "inputArtifacts": [
+              {
+                "name": "BuildOutput"
+              }
+            ],
+            "runOrder": 2
+          }
+        ]
+      }
+    ]
+  }
+}

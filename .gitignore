@@ -2,3 +2,5 @@
 stack.yaml
 launchtemplate.yaml
 test/
+lib/test.json
+lib/test2.json
