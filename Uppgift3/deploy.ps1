@@ -127,17 +127,17 @@ aws ec2 run-instances --image-id ami-07355fe79b493752d --count 1 --instance-type
 
 
 #ECS
-
-aws iam create-role --path /service-role/ --role-name "codebuild-$IAMRole" --assume-role-policy-document file://codedeployrole.json
-aws iam attach-role-policy --role-name "codebuild-$IAMRole" --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
-aws iam attach-role-policy --role-name "codebuild-$IAMRole" --policy-arn arn:aws:iam::389058819117:policy/service-role/CodeBuildBasePolicy-docker-nginx-eu-west-1
-aws iam attach-role-policy --role-name "codebuild-$IAMRole" --policy-arn arn:aws:iam::389058819117:policy/service-role/CodeBuildVpcPolicy-docker-nginx-eu-west-1
+Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/codedeployrole.json" -OutFile .\codedeployrole.json
+aws iam create-role --path /service-role/ --role-name "codebuild2-$IAMRole" --assume-role-policy-document file://codedeployrole.json
+aws iam attach-role-policy --role-name "codebuild2-$IAMRole" --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+aws iam attach-role-policy --role-name "codebuild2-$IAMRole" --policy-arn arn:aws:iam::389058819117:policy/service-role/CodeBuildBasePolicy-docker-nginx-eu-west-1
+aws iam attach-role-policy --role-name "codebuild2-$IAMRole" --policy-arn arn:aws:iam::389058819117:policy/service-role/CodeBuildVpcPolicy-docker-nginx-eu-west-1
 
 git init
 git add .
 git commit -m 'Add simple web site'
 
-aws codecommit create-repository --repository-name DockerDemo --repository-description "$RepositoryNames-ECS"
+aws codecommit create-repository --repository-name "$RepositoryNames-ECS" --repository-description "$RepositoryNames-ECS"
 $CommitHTTP = ((aws codecommit get-repository --repository-name $RepositoryNames-ECS --query 'repositoryMetadata.cloneUrlHttp').replace('"',''))
 git remote add origin $CommitHTTP
 git push -u origin master
