@@ -4,7 +4,7 @@
         {
             "Effect": "Allow",
             "Resource": [
-                "arn:aws:logs:<Region:<account-id>:log-group:/aws/codebuild/<repo>",
+                "arn:aws:logs:<Region>:<account-id>:log-group:/aws/codebuild/<repo>",
                 "arn:aws:logs:<Region>:<account-id>:log-group:/aws/codebuild/<repo>:*"
             ],
             "Action": [

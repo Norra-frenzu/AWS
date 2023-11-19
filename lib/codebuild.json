@@ -6,6 +6,7 @@
     "location": "<registry uri>",
     "gitCloneDepth": 1
   },
+  "sourceVersion": "refs/heads/master",
   "artifacts": {
     "type": "NO_ARTIFACTS"
   },
