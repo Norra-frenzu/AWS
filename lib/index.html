@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hello World to Fredrik</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            color: #ffffff;
+            font-family: 'Arial', sans-serif;
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+        }
+
+        h1 {
+            font-size: 3em;
+            letter-spacing: 2px;
+            margin-bottom: 20px;
+        }
+
+        p {
+            font-size: 1.5em;
+        }
+    </style>
+    <script>
+        function getRandomColor() {
+            var letters = '0123456789ABCDEF';
+            var color = '#';
+            for (var i = 0; i < 6; i++) {
+                color += letters[Math.floor(Math.random() * 16)];
+            }
+            return color;
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.body.style.backgroundColor = getRandomColor();
+        });
+    </script>
+</head>
+<body>
+    <h1>Hello World to Fredriks World</h1>
+</body>

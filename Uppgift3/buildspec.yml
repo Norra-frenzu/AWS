@@ -1,0 +1,29 @@
+version: 0.2
+
+phases:
+  pre_build:
+    commands:
+      # Fill in ECR information
+      - REGISTRY_URI=<registry uri>
+      - IMAGE_NAME=<image name>
+      - REGION=<region>
+      # Fill in ECS information
+      - CONTAINER_NAME=MyContainerName # TaskDefinition: container definition name (Wrapper for imageUri)
+      # -----------------------
+      - IMAGE=$REGISTRY_URI/$IMAGE_NAME
+      - COMMIT=$(echo $CODEBUILD_RESOLVED_SOURCE_VERSION | cut -c 1-8)
+      - aws ecr get-login-password --region $REGION | docker login --username AWS --password-stdin $REGISTRY_URI
+  build:
+    commands:
+      - docker build --tag $IMAGE .
+      - docker tag $IMAGE $IMAGE:$COMMIT
+  post_build:
+    commands:
+      - docker push $IMAGE
+      - docker push $IMAGE:$COMMIT
+      # Create imagedefinitions.json. This is used by ECS to know which docker image to use.
+      - printf '[{"name":"%s","imageUri":"%s"}]' $CONTAINER_NAME $IMAGE:$COMMIT > imagedefinitions.json
+artifacts:
+  files:
+    # Put imagedefinitions.json in the artifact zip file
+    - imagedefinitions.json
