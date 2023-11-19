@@ -7,7 +7,7 @@
     "gitCloneDepth": 1
   },
   "artifacts": {
-    "type": "NO_ARTIFACTS",
+    "type": "NO_ARTIFACTS"
   },
   "environment": {
     "type": "LINUX_CONTAINER",
