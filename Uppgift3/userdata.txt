@@ -1,0 +1,16 @@
+#!/bin/bash
+# Install docker
+dnf update -y
+dnf install docker -y
+systemctl start docker
+systemctl enable docker
+# Install ECR credential helper
+dnf install -y amazon-ecr-credential-helper
+mkdir -p /root/.docker
+cat <<EOF > /root/.docker/config.json
+{
+"credsStore": "ecr-login"
+}
+EOF
+# Run docker container
+docker run -d -p 80:80 <registry uri>/<image name>

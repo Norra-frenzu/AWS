@@ -6,35 +6,69 @@ In this exercise we will be working with Docker to create a webapplication with 
 
 
 ```powershell
+# check if required aws configure and program exist on system
+if ((Get-Package | Where-Object name -Match "aws") -eq $null) {
+    write-host -ForegroundColor Yellow  "System has not AWS CLI installad on in, please install it first and check if Docker desktop is also installad"
+    break
+    }
+else {write-host -ForegroundColor Green  "AWS CLI is installed"}
+
+if ((Get-Package | Where-Object name -Match "Docker Desktop") -eq $null) {
+    write-host -ForegroundColor Yellow  "System has not Docker Desktop installad on in, please install it first and check if Docker desktop is also installad"
+    break
+    }
+else {write-host -ForegroundColor Green  "Docker Desktop is installed"}
+
+if ((test-path ~\.aws\credentials) -eq $false) {
+    write-host -ForegroundColor Yellow  "System has not been configure with AWS configure, please do"
+    break
+}
+
 # Setup variables for script
 $RepositoryNames = "docker-mynginx2023"
-$Region = "eu-west-1"
+$Region = (aws configure get region)
 $ContainerName = "mynginx2023" 
 $Dir = "C:\AWS\Docker"
+$dockerimage = "mynginx2023"
+$dockername = "MyNginx"
 
 #Create our main directory for the exercies
-mkdir $Dir && cd $Dir
+if ((test-path $dir) -eq $false) {mkdir $Dir}
+cd $Dir
 
 #Check if necessary files and module e exist
 if ((Test-Path .\dockerfile) -eq $false) {
-    write-host "buildspec.yml don't exist on system, download it to main directory"
-    Invoke-WebRequest -Uri https://github.com/larsappel/ECSDemo/raw/main/Dockerfile -OutFile .\dockerfile
+    write-host -ForegroundColor Yellow "dockerfile don't exist on system, download it to main directory"
+    Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/dockerfile -OutFile .\dockerfile
     }
+else {write-host -ForegroundColor Green "dockerfile exist in directory"} 
 if ((Test-Path .\buildspec.yml) -eq $false) {
-    write-host "buildspec.yml don't exist on system, download it to main directory"
-    Invoke-WebRequest -Uri https://github.com/larsappel/ECSDemo/raw/main/buildspec.yml -OutFile .\buildspec.yml
+    write-host -ForegroundColor Yellow "buildspec.yml don't exist on system, download it to main directory"
+    Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/buildspec.yml -OutFile .\buildspec.yml
     }
-else {write-host "buildspec.yml exist in directory"} 
+else {write-host -ForegroundColor Green "buildspec.yml exist in directory"} 
 if ((Test-Path .\appspec.yml) -eq $false) {
-    write-host "appspec.yml don't exist on system, download it to main directory"
-    curl -O https://s3.amazonaws.com/aws-codedeploy-us-east-1/samples/latest/SampleApp_Linux.zip && tar -xf .\SampleApp_Linux.zip && Remove-Item .\SampleApp_Linux.zip
+    write-host -ForegroundColor Yellow "appspec.yml don't exist on system, download it to main directory"
+    curl -O https://s3.amazonaws.com/aws-codedeploy-us-east-1/samples/latest/SampleApp_Linux.zip; tar -xf .\SampleApp_Linux.zip; Remove-Item .\SampleApp_Linux.zip
     }
-else {write-host "appspec.yml exist in directory"}
+else {write-host -ForegroundColor Green "appspec.yml exist in directory"}
+
+write-host -ForegroundColor Yellow "download index.html to main directory"
+Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/buildspec.yml -OutFile .\buildspec.yml
 
 
-#Create Docker build
-docker build -t mynginx2023 .
-docker exec -it mynginx2023 /bin/bash "dnf update -y; dnf install nginx -y"
+#Create Docker build and print the index file on docker container for a fast check if working
+docker build -t $dockerimage .
+docker run -d -p 80:80 --name $dockername $dockerimage
+$dockerlocalhost = (docker exec -it $dockername /bin/bash -c "curl localhost")
+$localhost = (Invoke-RestMethod localhost)
+if ((Compare-Object -ReferenceObject $dockerlocalhost -DifferenceObject $localhost) -match "test") {write-host -ForegroundColor Green "Local docker container deployed correctly"}
+else {
+        Write-Host -ForegroundColor Red "Something went wrong with local docker deployment" 
+        break
+}
+
+write-host "test"
 # docker run -lt mynginx2023 /bin/bash
 
 #Setup locally repository in our main directory and make the first commit to it
@@ -58,13 +92,13 @@ git push -u origin main
 aws ecr create-repository --repository-name $RepositoryNames
 $repo = ((aws ecr describe-repositories --repository-names $RepositoryNames --query 'repositories[0].repositoryUri').replace('"',"").split("/"))
 if ((Test-Path .\buildspec.yml) -eq $false) {Invoke-WebRequest -Uri https://github.com/larsappel/ECSDemo/raw/main/buildspec.yml -OutFile .\buildspec.yml}
-(Get-Content .\buildspec.yml) -replace “<registry uri>”, “$($repo[0])” | Set-Content .\buildspec.yml
-(Get-Content .\buildspec.yml) -replace “<image name>”, “$($repo[1])” | Set-Content .\buildspec.yml
-(Get-Content .\buildspec.yml) -replace “<region>”, “$Region” | Set-Content .\buildspec.yml
-(Get-Content .\buildspec.yml) -replace “MyContainerName”, “$ContainerName” | Set-Content .\buildspec.yml
+(Get-Content .\buildspec.yml) -replace "<registry uri>", "$($repo[0])" | Set-Content .\buildspec.yml
+(Get-Content .\buildspec.yml) -replace "<image name>", "$($repo[1])" | Set-Content .\buildspec.yml
+(Get-Content .\buildspec.yml) -replace "<region>", "$Region" | Set-Content .\buildspec.yml
+(Get-Content .\buildspec.yml) -replace "MyContainerName", "$ContainerName" | Set-Content .\buildspec.yml
 
 
-Docker tag mynginx2023 $repo[0]/$RepositoryNames
+Docker tag $dockerimage $repo[0]/$RepositoryNames
 
 
 aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin $repo[0]
