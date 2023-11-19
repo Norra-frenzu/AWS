@@ -4,8 +4,8 @@
         {
             "Effect": "Allow",
             "Resource": [
-                "arn:aws:logs:<region:<account-id>:log-group:/aws/codebuild/<registry uri>",
-                "arn:aws:logs:<region>:<account-id>:log-group:/aws/codebuild/<registry uri>:*"
+                "arn:aws:logs:<Region:<account-id>:log-group:/aws/codebuild/<registry uri>",
+                "arn:aws:logs:<Region>:<account-id>:log-group:/aws/codebuild/<registry uri>:*"
             ],
             "Action": [
                 "logs:CreateLogGroup",
@@ -16,7 +16,7 @@
         {
             "Effect": "Allow",
             "Resource": [
-                "arn:aws:s3:::codepipeline-<region>-*"
+                "arn:aws:s3:::codepipeline-<Region>-*"
             ],
             "Action": [
                 "s3:PutObject",
@@ -29,7 +29,7 @@
         {
             "Effect": "Allow",
             "Resource": [
-                "arn:aws:codecommit:<region>:<account-id>:<registry uri>"
+                "arn:aws:codecommit:<Region>:<account-id>:<registry uri>"
             ],
             "Action": [
                 "codecommit:GitPull"
@@ -45,7 +45,7 @@
                 "codebuild:BatchPutCodeCoverages"
             ],
             "Resource": [
-                "arn:aws:codebuild:<region>:<account-id>:report-group/<registry uri>-*"
+                "arn:aws:codebuild:<Region>:<account-id>:report-group/<registry uri>-*"
             ]
         }
     ]
