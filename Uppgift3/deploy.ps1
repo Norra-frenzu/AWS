@@ -51,7 +51,7 @@ if ((Test-Path .\appspec.yml) -eq $false) {
 else {write-host -ForegroundColor Green "appspec.yml exist in directory"}
 
 write-host -ForegroundColor Yellow "download index.html to main directory"
-Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/buildspec.yml" -OutFile .\buildspec.yml
+Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/index.html" -OutFile .\index.html
 
 
 #Create Docker build and print the index file on docker container for a fast check if working
