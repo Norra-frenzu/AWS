@@ -29,7 +29,7 @@
         {
             "Effect": "Allow",
             "Resource": [
-                "arn:aws:codecommit:<Region>:<account-id>:<registry uri>"
+                "arn:aws:codecommit:<Region>:<account-id>:<repo>"
             ],
             "Action": [
                 "codecommit:GitPull"

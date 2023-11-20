@@ -3,7 +3,7 @@
   "description": "<project-name>",
   "source": {
     "type": "CODECOMMIT",
-    "location": "https://git-codecommit.<Region>.amazonaws.com/v1/repos/<registry uri>",
+    "location": "https://git-codecommit.<Region>.amazonaws.com/v1/repos/<repo>",
     "gitCloneDepth": 1
   },
   "sourceVersion": "refs/heads/master",
