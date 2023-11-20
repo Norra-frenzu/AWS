@@ -143,6 +143,11 @@ aws ec2 run-instances --image-id ami-07355fe79b493752d --count 1 --instance-type
 
 
 #ECS
+
+aws ec2 create-security-group --description "$SecgrpLB" --group-name "$SecgrpLB"
+aws ec2 authorize-security-group-ingress --group-name "$SecgrpLB" --protocol tcp --port 80 --cidr 0.0.0.0/0
+$SecgrpLBid = aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text
+
 write-host -ForegroundColor Green "Configure IAM roles and policy"
 
 Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/codedeployrole.json" -OutFile .\codedeployrole.json
@@ -172,14 +177,6 @@ aws codecommit create-repository --repository-name "$ECSrepo" --repository-descr
 $CommitHTTP = ((aws codecommit get-repository --repository-name $ECSrepo --query 'repositoryMetadata.cloneUrlHttp').replace('"',''))
 git remote add origin $CommitHTTP
 git push -u origin master
-
-
-
-# (Get-Content .\CodeBuildBasePolicy.json) -replace "<project-name>", "$EC2name-Project" | Set-Content .\CodeBuildBasePolicy.json
-# (Get-Content .\CodeBuildBasePolicy.json) -replace "<Region>", "$Region" | Set-Content .\CodeBuildBasePolicy.json
-# (Get-Content .\CodeBuildBasePolicy.json) -replace "<registry uri>", "$ECSrepo" | Set-Content .\CodeBuildBasePolicy.json
-# aws iam create-policy --policy-name "CodeBuildBasePolicy-$ECSrepo-$Region" --policy-document file://CodeBuildBasePolicy.json
-
 
 
 # Task-definitions
@@ -217,6 +214,17 @@ write-host -ForegroundColor Green "Set up ESC cluster"
 aws ecs create-cluster --cluster-name "$ECScluster" --capacity-providers FARGATE --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1
 
 echo '{
+    "cluster": "<cluster-name>",
+	"serviceName": "Service-name",
+	"taskDefinition": "task-name",
+	"loadBalancers": [
+	{
+		"targetGroupArn": "<sectargetname>",
+		"containerName": "<container-name>",
+		"containerPort": 80
+	}
+	],
+	"desiredCount": 1,
     "networkConfiguration": {
         "awsvpcConfiguration": {
             "subnets": [
@@ -238,7 +246,11 @@ echo '{
 (Get-Content .\ClusterService.json) -replace "<subnet-1>", "$($subnet[0])" | Set-Content .\ClusterService.json
 (Get-Content .\ClusterService.json) -replace "<subnet-2>", "$($subnet[1])" | Set-Content .\ClusterService.json
 (Get-Content .\ClusterService.json) -replace "<subnet-3>", "$($subnet[2])" | Set-Content .\ClusterService.json
-(Get-Content .\ClusterService.json) -replace "<secgrp>", "$secgrpid" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<cluster-name>", "$($ECScluster[2])" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<Service-name>", "$($ECSservice[2])" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<Service-name>", "$($sec[2])" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<secgrp>", "$SecgrpLBid" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<secgrp>", "$ECSrepo" | Set-Content .\ClusterService.json
 
 write-host -ForegroundColor Green "Start to create Cluster Services"
 aws ecs create-service --cluster "$ECScluster" --service-name "$ECSservice"  --cli-input-json file://ClusterService.json --desired-count 1 --task-definition "$TaskDefinition"
@@ -285,23 +297,19 @@ $CodePipelinePolicyArn = (aws iam list-policies --query "Policies[?PolicyName=='
 $CodePipelineRoleArn = (aws iam list-roles --query "Roles[?RoleName=='$IAMCodePipeline'].{ARN:Arn}" --output text)
 aws iam attach-role-policy --role-name "$IAMCodePipeline" --policy-arn $CodePipelinePolicyArn
 
-if ((Test-Path .\pipelineconfigV2.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/pipelineconfigV2.json -OutFile .\pipelineconfigV2.json}
-(Get-Content .\pipelineconfigV2.json) -replace "<Pipeline-name>", "$CodePipeline" | Set-Content .\pipelineconfigV2.json
-(Get-Content .\pipelineconfigV2.json) -replace "<account-id>", "$accountID" | Set-Content .\pipelineconfigV2.json
-(Get-Content .\pipelineconfigV2.json) -replace "<Region>", "$Region" | Set-Content .\pipelineconfigV2.json
-(Get-Content .\pipelineconfigV2.json) -replace "<ECS-repo>", "$ECSrepo" | Set-Content .\pipelineconfigV2.json
-(Get-Content .\pipelineconfigV2.json) -replace "<Cluster-name>", "$ECScluster" | Set-Content .\pipelineconfigV2.json
-(Get-Content .\pipelineconfigV2.json) -replace "<Cluster-service>", "$ECSservice" | Set-Content .\pipelineconfigV2.json
-(Get-Content .\pipelineconfigV2.json) -replace "<Build-arn>", "$CodePipelineRoleArn" | Set-Content .\pipelineconfigV2.json
-(Get-Content .\pipelineconfigV2.json) -replace "<s3-bucket>", "$S3BucketName" | Set-Content .\pipelineconfigV2.json
+if ((Test-Path .\pipelineconfig.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/pipelineconfig.json -OutFile .\pipelineconfig.json}
+(Get-Content .\pipelineconfig.json) -replace "<Pipeline-name>", "$CodePipeline" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<account-id>", "$accountID" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<Region>", "$Region" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<ECS-repo>", "$ECSrepo" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<Cluster-name>", "$ECScluster" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<Cluster-service>", "$ECSservice" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<Build-arn>", "$CodePipelineRoleArn" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<s3-bucket>", "$S3BucketName" | Set-Content .\pipelineconfig.json
 
 
 # Load-balancer
-write-host -ForegroundColor Yellow "Prepering Secgrp, load-balancer and target-group"
-
-aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text
-aws ec2 create-security-group --description "$SecgrpLB" --group-name "$SecgrpLB"
-aws ec2 authorize-security-group-ingress --group-name "$SecgrpLB" --protocol tcp --port 80 --cidr 0.0.0.0/0
+write-host -ForegroundColor Yellow "load-balancer and target-group"
 
 aws elbv2 create-load-balancer --name $LBName1 --subnets $subnet[0] $subnet[1] $subnet[2] --security-groups (aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text) --region $Region
 aws elbv2 create-target-group --name $LBgrpName --protocol HTTP --port 80 --target-type ip --vpc-id $VpcID --region $Region
@@ -314,10 +322,13 @@ $ListnerArn = (aws elbv2 describe-listeners --load-balancer-arn $LBArn --query "
 
 
 
-(Get-Content .\pipelineconfigV2.json) -replace "<ProdListenerArns>", "$ListnerArn" | Set-Content .\pipelineconfigV2.json
-(Get-Content .\pipelineconfigV2.json) -replace "<targetGroups>", "$LBgrpName" | Set-Content .\pipelineconfigV2.json
+(Get-Content .\pipelineconfig.json) -replace "<ProdListenerArns>", "$ListnerArn" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<targetGroups>", "$LBgrpName" | Set-Content .\pipelineconfig.json
 
 
 write-host -ForegroundColor Red "Now for the real pipeline"
 
-aws codepipeline create-pipeline --cli-input-json file://pipelineconfigV2.json
+aws codepipeline create-pipeline --cli-input-json file://pipelineconfig.json
+
+
+aws ecs create-service --cluster $ECScluster --service-name "$EC2name-ALB" --task-definition "$TaskDefinition" --network-configuration "awsvpcConfiguration={subnets=[$($subnet[0]),$($subnet[1]),$($subnet[2])],securityGroups=[$secgrpid],assignPublicIp=ENABLED}" --load-balancers containerName=$ECSrepo,targetGroupArn=$TargetGroupArn,containerPort=80 --desired-count 2

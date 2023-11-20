@@ -2,6 +2,10 @@
   "pipeline": {
     "name": "<Pipeline-name>",
     "roleArn": "<Build-Arn>",
+	"artifactStore": {
+      "type": "S3",
+      "location": "codepipeline-eu-west-1-814589278884"
+    },
     "stages": [
       {
         "name": "Source",
