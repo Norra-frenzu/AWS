@@ -41,7 +41,8 @@ $ECSservice = "$name-Service"
 $CodePipeline = "$ECSrepo"
 $IAMCodePipeline = "AWSCodePipelineServiceRole-$Region-$CodePipeline"
 $SecgrpLB = "$name-LB-http"
-$LBName = "$name-LB"
+$LBName1 = "$name-LB-1"
+$LBName2 = "$name-LB-2"
 $LBgrpName = "$name-LB-Grp"
 $VpcID = (aws ec2 describe-subnets --query 'Subnets[0].VpcId' --output text)
 
@@ -296,15 +297,24 @@ if ((Test-Path .\pipelineconfigV2.json) -eq $false) {Invoke-WebRequest -Uri http
 
 
 # Load-balancer
-write-host -ForegroundColor "Prepering Secgrp, load-balancer and target-group"
+write-host -ForegroundColor Yellow "Prepering Secgrp, load-balancer and target-group"
 
 aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text
 aws ec2 create-security-group --description "$SecgrpLB" --group-name "$SecgrpLB"
 aws ec2 authorize-security-group-ingress --group-name "$SecgrpLB" --protocol tcp --port 80 --cidr 0.0.0.0/0
-aws elbv2 create-load-balancer --name $LBName --subnets $subnet[0] $subnet[1] $subnet[2] --security-groups (aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text) --region $Region
+
+aws elbv2 create-load-balancer --name $LBName1 --subnets $subnet[0] $subnet[1] $subnet[2] --security-groups (aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text) --region $Region
 aws elbv2 create-target-group --name $LBgrpName --protocol HTTP --port 80 --target-type ip --vpc-id $VpcID --region $Region
 
-(Get-Content .\pipelineconfigV2.json) -replace "<listenerArns>", "$(aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(DNSName, '$LBname')].DNSName" --output text)" | Set-Content .\pipelineconfigV2.json
+$LBArn =(aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(DNSName, '$LBname1')].LoadBalancerArn" --output text)
+$TargetGroupArn =(aws elbv2 describe-target-groups --query "TargetGroups[?TargetGroupName=='$LBgrpName'].TargetGroupArn" --output text)
+
+aws elbv2 create-listener --load-balancer-arn $LBArn --protocol HTTP --port 80 --default-actions Type=forward,TargetGroupArn=$TargetGroupArn --region $Region
+$ListnerArn = (aws elbv2 describe-listeners --load-balancer-arn $LBArn --query "Listeners[].ListenerArn" --output text)
+
+
+
+(Get-Content .\pipelineconfigV2.json) -replace "<ProdListenerArns>", "$ListnerArn" | Set-Content .\pipelineconfigV2.json
 (Get-Content .\pipelineconfigV2.json) -replace "<targetGroups>", "$LBgrpName" | Set-Content .\pipelineconfigV2.json
 
 
