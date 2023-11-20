@@ -1,6 +1,6 @@
 {
   "pipeline": {
-    "name": "<Pipeline-name>",
+    "name": "<ProjectName>",
     "roleArn": "<Build-Arn>",
 	"artifactStore": {
       "type": "S3",
