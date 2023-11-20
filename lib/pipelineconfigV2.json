@@ -2,7 +2,10 @@
   "pipeline": {
     "name": "<Pipeline-name>",
     "roleArn": "<Build-Arn>",
-    "artifactBucket": "<s3-bucket>",
+    "artifactStore": {
+      "type": "S3",
+      "location": "codepipeline-eu-west-1-814589278884"
+    },
     "stages": [
       {
         "name": "Source",
@@ -24,6 +27,7 @@
                 "name": "SourceOutput"
               }
             ]
+			"runOrder": 1
           }
         ]
       },
@@ -98,7 +102,7 @@
                       }
                     ],
                     "prodTrafficRoute": {
-                      "listenerArns": ["<listenerArns>"]
+                      "listenerArns": ["<ProdListenerArns>"]
                     }
                   }
                 ]
