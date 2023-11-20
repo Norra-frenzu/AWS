@@ -189,6 +189,12 @@ echo '{
       {
         "name": "<container name>",
         "image": "<image>",
+        "portMappings": [
+            {
+            "containerPort": 80,
+            "hostPort": 80
+        }
+        ],
         "essential": true
       }
     ],
@@ -270,7 +276,9 @@ $S3BucketName = (aws s3api list-buckets --query 'Buckets[?contains(Name, `eu-wes
 write-host -ForegroundColor Yellow "Now to creating the pipeline"
 write-host -ForegroundColor Yellow "set up Role and policy for CodePipeline"
 
+if ((Test-Path .\CodePipelinePermissionPolicy.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/CodePipelinePermissionPolicy.json -OutFile .\CodePipelinePermissionPolicy.json}
 aws iam create-policy --policy-name "$IAMCodePipeline" --policy-document file://CodePipelinePermissionPolicy.json
+if ((Test-Path .\CodePipelineTrust.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/CodePipelineTrust.json -OutFile .\CodePipelineTrust.json}
 aws iam create-role --path /service-role/ --role-name "$IAMCodePipeline" --assume-role-policy-document file://CodePipelineTrust.json
 $CodePipelinePolicyArn = (aws iam list-policies --query "Policies[?PolicyName=='$IAMCodePipeline'].{ARN:Arn}" --output text)
 $CodePipelineRoleArn = (aws iam list-roles --query "Roles[?RoleName=='$IAMCodePipeline'].{ARN:Arn}" --output text)
@@ -287,25 +295,19 @@ if ((Test-Path .\pipelineconfigV2.json) -eq $false) {Invoke-WebRequest -Uri http
 (Get-Content .\pipelineconfigV2.json) -replace "<s3-bucket>", "$S3BucketName" | Set-Content .\pipelineconfigV2.json
 
 
-
-
-
-
 # Load-balancer
 write-host -ForegroundColor "Prepering Secgrp, load-balancer and target-group"
 
 aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text
-
 aws ec2 create-security-group --description "$SecgrpLB" --group-name "$SecgrpLB"
 aws ec2 authorize-security-group-ingress --group-name "$SecgrpLB" --protocol tcp --port 80 --cidr 0.0.0.0/0
-
 aws elbv2 create-load-balancer --name $LBName --subnets $subnet[0] $subnet[1] $subnet[2] --security-groups (aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text) --region $Region
-
 aws elbv2 create-target-group --name $LBgrpName --protocol HTTP --port 80 --target-type ip --vpc-id $VpcID --region $Region
+
 (Get-Content .\pipelineconfigV2.json) -replace "<listenerArns>", "$(aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(DNSName, '$LBname')].DNSName" --output text)" | Set-Content .\pipelineconfigV2.json
 (Get-Content .\pipelineconfigV2.json) -replace "<targetGroups>", "$LBgrpName" | Set-Content .\pipelineconfigV2.json
 
 
-write-host -ForegroundColor Yellow "Now for the real pipeline"
+write-host -ForegroundColor Red "Now for the real pipeline"
 
 aws codepipeline create-pipeline --cli-input-json file://pipelineconfigV2.json
