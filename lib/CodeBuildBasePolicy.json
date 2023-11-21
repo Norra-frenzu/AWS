@@ -47,6 +47,53 @@
             "Resource": [
                 "arn:aws:codebuild:<Region>:<account-id>:report-group/<repo>-*"
             ]
+        },
+		{
+            "Effect": "Allow",
+            "Resource": [
+                "arn:aws:logs:<Region>:<account-id>:log-group:/aws/codebuild/<repo>",
+                "arn:aws:logs:<Region>:<account-id>:log-group:/aws/codebuild/<repo>:*"
+            ],
+            "Action": [
+                "logs:CreateLogGroup",
+                "logs:CreateLogStream",
+                "logs:PutLogEvents"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Resource": [
+                "arn:aws:s3:::codepipeline-<Region>-*"
+            ],
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:GetObjectVersion",
+                "s3:GetBucketAcl",
+                "s3:GetBucketLocation"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Resource": [
+                "arn:aws:codecommit:<Region>:<account-id>:<repo>"
+            ],
+            "Action": [
+                "codecommit:GitPull"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "codebuild:CreateReportGroup",
+                "codebuild:CreateReport",
+                "codebuild:UpdateReport",
+                "codebuild:BatchPutTestCases",
+                "codebuild:BatchPutCodeCoverages"
+            ],
+            "Resource": [
+                "arn:aws:codebuild:<Region>:<account-id>:report-group/<repo>*"
+            ]
         }
     ]
 }
