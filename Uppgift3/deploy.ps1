@@ -20,31 +20,33 @@ else {write-host -ForegroundColor Green  "AWS CLI has been configure, continue"}
 
 
 # Setup variables for script
-$name = "mynginx2023"
+$date = (get-date -UFormat %Y%m%d)
+$name = "$date-mynginx2023"
 $RepositoryNames = "$name-docker-repo"
 $Region = (aws configure get region)
-$ContainerName = "$name-Container-$(get-date -UFormat %Y%m%-%H%M%S)" 
+$ContainerName = "$name-Container" 
 $Dir = "C:\AWS\Docker"
 $dockerimage = "$name"
 $dockername = "$name-Docker"
 $Keyname = "fredrik"
 $EC2name = "$name-docker"
-$IAMRole = "EcrReadOnlyRole"
-$secgrpname = "docker-http/ssh"
+$IAMRole = "$date-EcrReadOnlyRole"
+$ContainerSecgrpName = "$date-Container-http/ssh"
 $project = "$name-project"
-$CodeBuildRole ="codebuild2-$IAMRole"
-$con = "$name-ECS-Repo"
+$CodeBuildRole ="AWSCodePipeline-$project-$Region"
+$CodeBuildPolicy = "CodeBuildBasePolicy-$project-$Region"
+$ECSrepo = "$name-ECS-Repo"
 $accountID = (aws sts get-caller-identity --query 'Account' --output text)
 $subnet = (aws ec2 describe-subnets --query 'Subnets[].SubnetId').trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
 $TaskDefinition = "$name-task"
 $ECScluster = "$name-cluster"
 $ECSservice = "$name-Service"
 $CodePipeline = "$name-pipeline"
-$IAMCodePipeline = "AWSCodePipelineServiceRole-$Region-$CodePipeline"
+$IAMCodePipeline = "AWSCodePipeline-$name"
 $SecgrpLB = "$name-LB-http"
 $LBName1 = "$name-LB-1"
-$LBName2 = "$name-LB-2"
-$LBgrpName = "$name-LB-Grp"
+$LBgrpName = "$date-LB-Grp"
+$Buildname = "$name-Build"
 $VpcID = (aws ec2 describe-subnets --query 'Subnets[0].VpcId' --output text)
 $S3BucketName = (aws s3api list-buckets --query 'Buckets[?contains(Name, `eu-west-1`)].Name' --output text)
 
@@ -73,7 +75,7 @@ else {write-host -ForegroundColor Green "appspec.yml exist in directory"}
 write-host -ForegroundColor Yellow "download index.html to main directory"
 Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/index.html" -OutFile .\index.html
 
-
+# ------ Local Work been done -------
 #Create Docker build and print the index file on docker container for a fast check if working
 docker build -t $dockerimage .
 docker run -d -p 80:80 --name $dockername $dockerimage
@@ -109,8 +111,7 @@ aws ecr get-login-password --region eu-west-1 | docker login --username AWS --pa
 Docker tag $dockerimage "$($ECRrepo[0])/$($RepositoryNames):latest"
 docker push "$($ECRrepo[0])/$($RepositoryNames):latest"
 
-
-aws ecr describe-images --repository-name $RepositoryNames
+# ------ End of Local Work been done -------
 
 
 # -----SET UP IAM Roles and Policys-------
@@ -120,26 +121,28 @@ if ($IAMRole -notcontains $extRoles) {
     Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/role.json" -OutFile .\role.json
 }
 write-host -ForegroundColor Yellow "Create instance profile with role"
-    aws iam create-instance-profile --instance-profile-name $IAMRole
-    aws iam create-role --role-name $IAMRole --assume-role-policy-document file://role.json
-    aws iam attach-role-policy --role-name $IAMRole --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
-    aws iam add-role-to-instance-profile --instance-profile-name $IAMRole --role-name $IAMRole
+aws iam create-instance-profile --instance-profile-name $IAMRole
+aws iam create-role --role-name $IAMRole --assume-role-policy-document file://role.json
+aws iam attach-role-policy --role-name $IAMRole --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+aws iam add-role-to-instance-profile --instance-profile-name $IAMRole --role-name $IAMRole
 
-    write-host -ForegroundColor Green "Configure IAM roles and policy"
+write-host -ForegroundColor Green "Configure IAM roles and policy"
 
-    Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/codedeployrole.json" -OutFile .\codedeployrole.json
-    aws iam create-role --role-name "$CodeBuildRole" --assume-role-policy-document file://codedeployrole.json
-    aws iam attach-role-policy --role-name "$CodeBuildRole" --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/codedeployrole.json" -OutFile .\codedeployrole.json
+aws iam create-role --role-name "$CodeBuildRole" --assume-role-policy-document file://codedeployrole.json
+aws iam attach-role-policy --role-name "$CodeBuildRole" --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
 
-    if ((Test-Path .\codebuild.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/CodeBuildBasePolicy.json -OutFile .\CodeBuildBasePolicy.json}
+ ## Special write to json
+if ((Test-Path .\CodeBuildBasePolicy.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/CodeBuildBasePolicy.json -OutFile .\CodeBuildBasePolicy.json}
 (Get-Content .\CodeBuildBasePolicy.json) -replace "<project-name>", "$project" | Set-Content .\CodeBuildBasePolicy.json
 (Get-Content .\CodeBuildBasePolicy.json) -replace "<Region>", "$Region" | Set-Content .\CodeBuildBasePolicy.json
 (Get-Content .\CodeBuildBasePolicy.json) -replace "<account-id>", "$accountID" | Set-Content .\CodeBuildBasePolicy.json
-(Get-Content .\CodeBuildBasePolicy.json) -replace "<repo>", "$ECSrepo" | Set-Content .\CodeBuildBasePolicy.json
+(Get-Content .\CodeBuildBasePolicy.json) -replace "<repo>", "$project" | Set-Content .\CodeBuildBasePolicy.json
+(Get-Content .\CodeBuildBasePolicy.json) -replace "<ECS-repo>", "$ECSrepo" | Set-Content .\CodeBuildBasePolicy.json
 
-aws iam create-policy --policy-name "CodeBuildBasePolicy-$ECSrepo-$Region" --policy-document file://CodeBuildBasePolicy.json
-$Arn = (aws iam list-policies --query "Policies[?PolicyName=='CodeBuildBasePolicy-$ECSrepo-$Region'].{ARN:Arn}" --output text)
-aws iam attach-role-policy --role-name "$CodeBuildRole" --policy-arn $Arn
+aws iam create-policy --policy-name "$CodeBuildPolicy" --policy-document file://CodeBuildBasePolicy.json
+$CodeBuildPolicyArn = (aws iam list-policies --query "Policies[?PolicyName=='$CodeBuildPolicy'].{ARN:Arn}" --output text)
+aws iam attach-role-policy --role-name "$CodeBuildRole" --policy-arn $CodeBuildPolicyArn
 
 write-host -ForegroundColor Yellow "set up Role and policy for CodePipeline"
 
@@ -150,6 +153,7 @@ aws iam create-role --path /service-role/ --role-name "$IAMCodePipeline" --assum
 $CodePipelinePolicyArn = (aws iam list-policies --query "Policies[?PolicyName=='$IAMCodePipeline'].{ARN:Arn}" --output text)
 $CodePipelineRoleArn = (aws iam list-roles --query "Roles[?RoleName=='$IAMCodePipeline'].{ARN:Arn}" --output text)
 aws iam attach-role-policy --role-name "$IAMCodePipeline" --policy-arn $CodePipelinePolicyArn
+aws iam attach-role-policy --role-name "$CodeBuildRole" --policy-arn $CodePipelinePolicyArn
 
 # ------ End of Roles and policys -------
 # ------ Setup Networking stuff -------
@@ -160,13 +164,11 @@ $SecgrpLBid = aws ec2 describe-security-groups --query "SecurityGroups[?GroupNam
 
 start-sleep -Seconds 5
 
-aws ec2 create-security-group --description "$secgrpname" --group-name "$secgrpname"
-aws ec2 authorize-security-group-ingress --group-name $secgrpname --protocol tcp --port 80 --cidr 0.0.0.0/0
-aws ec2 authorize-security-group-ingress --group-name $secgrpname --protocol tcp --port 22 --cidr 0.0.0.0/0
-$secgrpid = (aws ec2 describe-security-groups --query 'SecurityGroups[].GroupId' --group-names $secgrpname).trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
+aws ec2 create-security-group --description "$ContainerSecgrpName" --group-name "$ContainerSecgrpName"
+aws ec2 authorize-security-group-ingress --group-name $ContainerSecgrpName --protocol tcp --port 80 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-name $ContainerSecgrpName --protocol tcp --port 22 --cidr 0.0.0.0/0
+$secgrpid = (aws ec2 describe-security-groups --query 'SecurityGroups[].GroupId' --group-names $ContainerSecgrpName).trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
 
-write-host -ForegroundColor Yellow "Create a EC2 instances"
-aws ec2 run-instances --image-id ami-07355fe79b493752d --count 1 --instance-type t2.micro --key-name $Keyname --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$EC2name}]" --user-data "file://userdata.txt" --iam-instance-profile Name=$IAMRole --security-groups $secgrpname
 
 # Load-balancer
 
@@ -182,13 +184,12 @@ $TargetGroupArn =(aws elbv2 describe-target-groups --query "TargetGroups[?Target
 aws elbv2 create-listener --load-balancer-arn $LBArn --protocol HTTP --port 80 --default-actions Type=forward,TargetGroupArn=$TargetGroupArn --region $Region
 $ListnerArn = (aws elbv2 describe-listeners --load-balancer-arn $LBArn --query "Listeners[].ListenerArn" --output text)
 
-
-
 # ------- End of Networking stuff -------
 
 # ------- Creating some json file -------
   ### Task define
 write-host -ForegroundColor Green "Preper for setting up Task-Definition"
+write-host -ForegroundColor Yellow "write to task-definition"
 echo '{
     "containerDefinitions": [
       {
@@ -211,15 +212,25 @@ echo '{
 (Get-Content .\task-definition.json) -replace "<container name>", "$ContainerName" | Set-Content .\task-definition.json
 (Get-Content .\task-definition.json) -replace "<your-account-id>", "$accountID" | Set-Content .\task-definition.json
 
-  ### ClusterService
 
+  ### CODEBUILD
+  
+  if ((Test-Path .\codebuild.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/codebuild.json -OutFile .\codebuild.json}
+  (Get-Content .\codebuild.json) -replace "<Build-name>", "$Buildname" | Set-Content .\codebuild.json
+  (Get-Content .\codebuild.json) -replace "<repo>", "$ECSrepo" | Set-Content .\codebuild.json
+  (Get-Content .\codebuild.json) -replace "<service-role>", "$CodeBuildRole" | Set-Content .\codebuild.json
+  (Get-Content .\codebuild.json) -replace "<project-name>", "$project" | Set-Content .\codebuild.json
+  (Get-Content .\codebuild.json) -replace "<Region>", "$Region" | Set-Content .\codebuild.json
+
+  ### ClusterService
+  write-host -ForegroundColor Yellow "write to ClusterService"
 echo '{
     "cluster": "<cluster-name>",
-	"serviceName": "Service-name",
-	"taskDefinition": "task-name",
+	"serviceName": "<Service-name>",
+	"taskDefinition": "<task-name>",
 	"loadBalancers": [
 	{
-		"targetGroupArn": "<sectargetname>",
+		"targetGroupArn": "<TargetGroupArn>",
 		"containerName": "<container-name>",
 		"containerPort": 80
 	}
@@ -239,35 +250,28 @@ echo '{
         }
     }
   }' > .\ClusterService.json
-
-  ### CODEBUILD
-if ((Test-Path .\codebuild.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/codebuild.json -OutFile .\codebuild.json}
-(Get-Content .\codebuild.json) -replace "<repo>", "$ECSrepo" | Set-Content .\codebuild.json
-(Get-Content .\codebuild.json) -replace "<service-role>", "$CodeBuildRole" | Set-Content .\codebuild.json
-(Get-Content .\codebuild.json) -replace "<project-name>", "$project" | Set-Content .\codebuild.json
-(Get-Content .\codebuild.json) -replace "<Region>", "$Region " | Set-Content .\codebuild.json
-
- 
-
+ write-host -ForegroundColor Yellow "Write to CloudService"
+ if ((Test-Path .\ClusterService.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/codebuild.json -OutFile .\ClusterService.json}
 (Get-Content .\ClusterService.json) -replace "<task-name>", "$TaskDefinition" | Set-Content .\ClusterService.json
 (Get-Content .\ClusterService.json) -replace "<subnet-1>", "$($subnet[0])" | Set-Content .\ClusterService.json
 (Get-Content .\ClusterService.json) -replace "<subnet-2>", "$($subnet[1])" | Set-Content .\ClusterService.json
 (Get-Content .\ClusterService.json) -replace "<subnet-3>", "$($subnet[2])" | Set-Content .\ClusterService.json
 (Get-Content .\ClusterService.json) -replace "<cluster-name>", "$($ECScluster[2])" | Set-Content .\ClusterService.json
 (Get-Content .\ClusterService.json) -replace "<Service-name>", "$($ECSservice)" | Set-Content .\ClusterService.json
-(Get-Content .\ClusterService.json) -replace "<sectargetname>", "$($TargetGroupArn)" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<TargetGroupArn>", "$($TargetGroupArn)" | Set-Content .\ClusterService.json
 (Get-Content .\ClusterService.json) -replace "<container-name>", "$ContainerName" | Set-Content .\ClusterService.json
 (Get-Content .\ClusterService.json) -replace "<secgrp>", "$secgrpid" | Set-Content .\ClusterService.json
 
 
   ### ECS
 
-write-host -ForegroundColor Yellow "Setup userdata file for EC2 instances"
-Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/userdata.txt" -OutFile .\userdata.txt
+  write-host -ForegroundColor Yellow "Write to  userdata file for EC2 instances"
+if ((Test-Path .\userdata.txt) -eq $false) {Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/userdata.txt" -OutFile .\userdata.txt}
 (Get-Content .\userdata.txt) -replace "<registry uri>", "$($ECRrepo[0])" | Set-Content .\userdata.txt
 (Get-Content .\userdata.txt) -replace "<image name>", "$($ECRrepo[1])" | Set-Content .\userdata.txt
 
   ### pipelineconfig
+  write-host -ForegroundColor Yellow "write to pipeline config"
 if ((Test-Path .\pipelineconfig.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/pipelineconfig.json -OutFile .\pipelineconfig.json}
 (Get-Content .\pipelineconfig.json) -replace "<Pipeline-name>", "$CodePipeline" | Set-Content .\pipelineconfig.json
 (Get-Content .\pipelineconfig.json) -replace "<account-id>", "$accountID" | Set-Content .\pipelineconfig.json
@@ -277,7 +281,7 @@ if ((Test-Path .\pipelineconfig.json) -eq $false) {Invoke-WebRequest -Uri https:
 (Get-Content .\pipelineconfig.json) -replace "<Cluster-service>", "$ECSservice" | Set-Content .\pipelineconfig.json
 (Get-Content .\pipelineconfig.json) -replace "<Build-arn>", "$CodePipelineRoleArn" | Set-Content .\pipelineconfig.json
 (Get-Content .\pipelineconfig.json) -replace "<s3-bucket>", "$S3BucketName" | Set-Content .\pipelineconfig.json
-
+(Get-Content .\pipelineconfig.json) -replace "<ProjectName>", "$project" | Set-Content .\pipelineconfig.json
 
 (Get-Content .\pipelineconfig.json) -replace "<ProdListenerArns>", "$ListnerArn" | Set-Content .\pipelineconfig.json
 (Get-Content .\pipelineconfig.json) -replace "<targetGroups>", "$LBgrpName" | Set-Content .\pipelineconfig.json
@@ -298,6 +302,12 @@ $CommitHTTP = ((aws codecommit get-repository --repository-name $ECSrepo --query
 git remote add origin $CommitHTTP
 git push -u origin master
 
+# ------- Create a simple EC2 with user data ------
+write-host -ForegroundColor Yellow "Create a EC2 instances"
+aws ec2 run-instances --image-id ami-07355fe79b493752d --count 1 --instance-type t2.micro --key-name $Keyname --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$EC2name}]" --user-data "file://userdata.txt" --iam-instance-profile Name=$IAMRole --security-groups $ContainerSecgrpName
+
+# ------- End of simple EC2 with user data ------
+
 
 # ------- Register task ------- 
 write-host -ForegroundColor Green "Start to create Task-Definition"
@@ -312,8 +322,10 @@ aws ecs create-service --cluster "$ECScluster" --service-name "$ECSservice"  --c
 
 
 # ------- Craeting project CodeBuild -------
+Write-host -ForegroundColor Yellow "Start creating Project"
 aws codebuild create-project --cli-input-json file://codebuild.json
-aws codebuild start-build --project-name $ECSrepo
+Write-host -ForegroundColor Yellow "Start Build Project"
+aws codebuild start-build --project-name $project
 
 
 # ------- CodePipeline
@@ -324,5 +336,26 @@ write-host -ForegroundColor Red "Now for the real pipeline"
 
 aws codepipeline create-pipeline --cli-input-json file://pipelineconfig.json
 
+Start-Sleep -Seconds 60
 
-# aws ecs create-service --cluster $ECScluster --service-name "$EC2name-ALB" --task-definition "$TaskDefinition" --network-configuration "awsvpcConfiguration={subnets=[$($subnet[0]),$($subnet[1]),$($subnet[2])],securityGroups=[$secgrpid],assignPublicIp=ENABLED}" --load-balancers containerName=$ECSrepo,targetGroupArn=$TargetGroupArn,containerPort=80 --desired-count 2
+$pipelinestatus = (aws codepipeline get-pipeline-state --name $project --query 'stageStates[?latestExecution].actionStates[].latestExecution.status').trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
+while ($pipelinestatus -contains "InProgress" ){
+    
+    write-host -ForegroundColor Yellow  "Pipeline in progress"
+    start-sleep -Seconds 30
+    $pipelinestatus = (aws codepipeline get-pipeline-state --name $project --query 'stageStates[?latestExecution].actionStates[].latestExecution.status').trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
+}
+
+if ($pipelinestatus -contains "Failed") {
+    Write-Host -ForegroundColor Red "something went wrong with the pipeline"
+    break
+}
+elseif ($pipelinestatus -contains "Abandoned") {
+    Write-Host -ForegroundColor Red "Someone stopped the pipeline"
+    break
+}
+
+Write-Host -ForegroundColor Green "Pipeline Succeeded"
+
+$LBDNSName =aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(DNSName, '$LBname1')].DNSName" --output text
+explorer http://$LBDNSName
