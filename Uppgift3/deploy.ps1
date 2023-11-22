@@ -1,4 +1,9 @@
 # check if required aws configure and program exist on system
+if (($PSVersionTable.PSVersion.Major) -ne 5) {
+    write-host -ForegroundColor Red "Script only tested and working in Powershell 5.1, please use rigth powershell"
+    Break
+}
+
 if ((Get-Package | Where-Object name -Match "aws") -eq $null) {
     write-host -ForegroundColor Yellow  "System has not AWS CLI installad on in, please install it first and check if Docker desktop is also installad"
     break
@@ -165,7 +170,7 @@ $SecgrpLBid = aws ec2 describe-security-groups --query "SecurityGroups[?GroupNam
 start-sleep -Seconds 5
 
 aws ec2 create-security-group --description "$ContainerSecgrpName" --group-name "$ContainerSecgrpName"
-aws ec2 authorize-security-group-ingress --group-name $ContainerSecgrpName --protocol tcp --port 80 --cidr 0.0.0.0/0
+aws ec2 authorize-security-group-ingress --group-name $ContainerSecgrpName --protocol tcp --port 80 --source-group $SecgrpLBid
 aws ec2 authorize-security-group-ingress --group-name $ContainerSecgrpName --protocol tcp --port 22 --cidr 0.0.0.0/0
 $secgrpid = (aws ec2 describe-security-groups --query 'SecurityGroups[].GroupId' --group-names $ContainerSecgrpName).trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
 
@@ -215,14 +220,37 @@ echo '{
 
   ### CODEBUILD
   
-  if ((Test-Path .\codebuild.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/codebuild.json -OutFile .\codebuild.json}
-  (Get-Content .\codebuild.json) -replace "<Build-name>", "$Buildname" | Set-Content .\codebuild.json
-  (Get-Content .\codebuild.json) -replace "<repo>", "$ECSrepo" | Set-Content .\codebuild.json
-  (Get-Content .\codebuild.json) -replace "<service-role>", "$CodeBuildRole" | Set-Content .\codebuild.json
-  (Get-Content .\codebuild.json) -replace "<project-name>", "$project" | Set-Content .\codebuild.json
-  (Get-Content .\codebuild.json) -replace "<Region>", "$Region" | Set-Content .\codebuild.json
 
-  ### ClusterService
+if ((Test-Path .\codebuild.json) -eq $false) {
+    echo '{
+        "name": "<project-name>",
+        "description": "<project-name>",
+        "source": {
+          "type": "CODECOMMIT",
+          "location": "https://git-codecommit.<Region>.amazonaws.com/v1/repos/<repo>",
+          "gitCloneDepth": 1
+        },
+        "sourceVersion": "refs/heads/master",
+        "artifacts": {
+          "type": "NO_ARTIFACTS"
+        },
+        "environment": {
+          "type": "LINUX_CONTAINER",
+          "image": "aws/codebuild/standard:7.0",
+          "computeType": "BUILD_GENERAL1_SMALL",
+          "privilegedMode": true
+        },
+        "serviceRole": "<service-role>"
+    }' > .\codebuild.json    
+}
+
+(Get-Content .\codebuild.json) -replace "<Build-name>", "$Buildname" | Set-Content .\codebuild.json
+(Get-Content .\codebuild.json) -replace "<repo>", "$ECSrepo" | Set-Content .\codebuild.json
+(Get-Content .\codebuild.json) -replace "<service-role>", "$CodeBuildRole" | Set-Content .\codebuild.json
+(Get-Content .\codebuild.json) -replace "<project-name>", "$project" | Set-Content .\codebuild.json
+(Get-Content .\codebuild.json) -replace "<Region>", "$Region" | Set-Content .\codebuild.json
+
+### ClusterService
   write-host -ForegroundColor Yellow "write to ClusterService"
 echo '{
     "cluster": "<cluster-name>",
@@ -265,13 +293,115 @@ echo '{
 
   ### ECS
 
-  write-host -ForegroundColor Yellow "Write to  userdata file for EC2 instances"
-if ((Test-Path .\userdata.txt) -eq $false) {Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/userdata.txt" -OutFile .\userdata.txt}
+write-host -ForegroundColor Yellow "Write to  userdata file for EC2 instances"
+
+if ((Test-Path .\userdata.txt) -eq $false) {
+    echo '#!/bin/bash
+# Install docker
+dnf update -y
+dnf install docker -y
+systemctl start docker
+systemctl enable docker
+# Install ECR credential helper
+dnf install -y amazon-ecr-credential-helper
+mkdir -p /root/.docker
+cat <<EOF > /root/.docker/config.json
+{
+"credsStore": "ecr-login"
+}
+EOF
+# Run docker container
+docker run -d -p 80:80 <registry uri>/<image name>' > .\userdata.txt
+}
 (Get-Content .\userdata.txt) -replace "<registry uri>", "$($ECRrepo[0])" | Set-Content .\userdata.txt
 (Get-Content .\userdata.txt) -replace "<image name>", "$($ECRrepo[1])" | Set-Content .\userdata.txt
 
   ### pipelineconfig
-  write-host -ForegroundColor Yellow "write to pipeline config"
+write-host -ForegroundColor Yellow "write to pipeline config"
+echo '{
+    "pipeline": {
+      "name": "<ProjectName>",
+      "roleArn": "<Build-Arn>",
+      "artifactStore": {
+        "type": "S3",
+        "location": "codepipeline-eu-west-1-814589278884"
+      },
+      "stages": [
+        {
+          "name": "Source",
+          "actions": [
+            {
+              "name": "SourceAction",
+              "actionTypeId": {
+                "category": "Source",
+                "owner": "AWS",
+                "version": "1",
+                "provider": "CodeCommit"
+              },
+              "configuration": {
+                "RepositoryName": "<ECS-repo>",
+                "BranchName": "master"
+              },
+              "outputArtifacts": [
+                {
+                  "name": "SourceOutput"
+                }
+              ],
+              "runOrder": 1
+            }
+          ]
+        },
+        {
+          "name": "BuildAndDeploy",
+          "actions": [
+            {
+              "name": "BuildAndDeployAction",
+              "actionTypeId": {
+                "category": "Build",
+                "owner": "AWS",
+                "version": "1",
+                "provider": "CodeBuild"
+              },
+              "configuration": {
+                "ProjectName": "<ProjectName>"
+              },
+              "inputArtifacts": [
+                {
+                  "name": "SourceOutput"
+                }
+              ],
+              "outputArtifacts": [
+                {
+                  "name": "BuildOutput"
+                }
+              ],
+              "runOrder": 1
+            },
+            {
+              "name": "DeployAction",
+              "actionTypeId": {
+                "category": "Deploy",
+                "owner": "AWS",
+                "version": "1",
+                "provider": "ECS"
+              },
+              "configuration": {
+                "ClusterName": "<Cluster-name>",
+                "ServiceName": "<Cluster-service>",
+                "FileName": "imagedefinitions.json"
+              },
+              "inputArtifacts": [
+                {
+                  "name": "BuildOutput"
+                }
+              ],
+              "runOrder": 2
+            }
+          ]
+        }
+      ]
+    }
+  }' > .\pipelineconfig.json
 if ((Test-Path .\pipelineconfig.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/pipelineconfig.json -OutFile .\pipelineconfig.json}
 (Get-Content .\pipelineconfig.json) -replace "<Pipeline-name>", "$CodePipeline" | Set-Content .\pipelineconfig.json
 (Get-Content .\pipelineconfig.json) -replace "<account-id>", "$accountID" | Set-Content .\pipelineconfig.json
@@ -358,5 +488,11 @@ elseif ($pipelinestatus -contains "Abandoned") {
 
 Write-Host -ForegroundColor Green "Pipeline Succeeded"
 
+aws ec2 stop-instances --instance-ids (aws ec2 describe-instances --filter "Name=tag:Name,Values=$EC2name" --query 'Reservations[].Instances[].InstanceId' --output text)
+
+if ((Test-Path ~\Documents\Docker\$ECSrepo-Info\) -eq $false) {mkdir ~\Documents\Docker\$ECSrepo}
+aws codecommit get-repository --repository-name 20231122-mynginx2023-ECS-Repo --query 'repositoryMetadata.cloneUrlHttp'
+aws codecommit get-repository --repository-name 20231122-mynginx2023-ECS-Repo --query 'repositoryMetadata.cloneUrlHttp' --output text >> ~\Documents\Docker\$ECSrepo\info.txt
 $LBDNSName =aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(DNSName, '$LBname1')].DNSName" --output text
 explorer http://$LBDNSName
+

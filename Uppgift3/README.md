@@ -4,9 +4,15 @@ In this exercise we will be working with Docker to create a webapplication with 
 
 
 
-
+### Checking system
+In the begin of the script i have applied a check if there something missing for running the script like AWS cli, Docker and its running in Powershell 5.
 ```powershell
 # check if required aws configure and program exist on system
+if (($PSVersionTable.PSVersion.Major) -ne 5) {
+    write-host -ForegroundColor Red "Script only tested and working in Powershell 5.1, please use rigth powershell"
+    Break
+}
+
 if ((Get-Package | Where-Object name -Match "aws") -eq $null) {
     write-host -ForegroundColor Yellow  "System has not AWS CLI installad on in, please install it first and check if Docker desktop is also installad"
     break
@@ -19,19 +25,61 @@ if ((Get-Package | Where-Object name -Match "Docker Desktop") -eq $null) {
     }
 else {write-host -ForegroundColor Green  "Docker Desktop is installed"}
 
+if ((get-process | Where-Object {$_.ProcessName -match "docker desktop"}) -ne $null) {
+    $dir =get-ChildItem -Path "C:\" -Dir -Recurse | Where-Object {$_.FullName -like "*\Docker"}
+    $path = (get-childitem $dir "Docker Desktop.exe").fullname
+    start-process $path
+}
+
 if ((test-path ~\.aws\credentials) -eq $false) {
     write-host -ForegroundColor Yellow  "System has not been configure with AWS configure, please do"
     break
 }
+else {write-host -ForegroundColor Green  "AWS CLI has been configure, continue"}
+
+```
+
+### Parameters
+Here we start to declare most of the variables for the script, its here you make changes for Container namn, secgrp ect. 
+```powershell
 
 # Setup variables for script
-$RepositoryNames = "docker-mynginx2023"
+$date = (get-date -UFormat %Y%m%d)
+$name = "$date-mynginx2023"
+$RepositoryNames = "$name-docker-repo"
 $Region = (aws configure get region)
-$ContainerName = "mynginx2023" 
+$ContainerName = "$name-Container" 
 $Dir = "C:\AWS\Docker"
-$dockerimage = "mynginx2023"
-$dockername = "MyNginx"
+$dockerimage = "$name"
+$dockername = "$name-Docker"
+$imageID = "ami-07355fe79b493752d"
+$Keyname = "fredrik"
+$EC2name = "$name-docker"
+$IAMRole = "$date-EcrReadOnlyRole"
+$ContainerSecgrpName = "$date-Container-http/ssh"
+$project = "$name-project"
+$CodeBuildRole ="AWSCodePipeline-$project-$Region"
+$CodeBuildPolicy = "CodeBuildBasePolicy-$project-$Region"
+$ECSrepo = "$name-ECS-Repo"
+$accountID = (aws sts get-caller-identity --query 'Account' --output text)
+$subnet = (aws ec2 describe-subnets --query 'Subnets[].SubnetId').trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
+$TaskDefinition = "$name-task"
+$ECScluster = "$name-cluster"
+$ECSservice = "$name-Service"
+$CodePipeline = "$name-pipeline"
+$IAMCodePipeline = "AWSCodePipeline-$name"
+$SecgrpLB = "$name-LB-http"
+$LBName1 = "$name-LB-1"
+$LBgrpName = "$date-LB-Grp"
+$Buildname = "$name-Build"
+$VpcID = (aws ec2 describe-subnets --query 'Subnets[0].VpcId' --output text)
+$S3BucketName = (aws s3api list-buckets --query 'Buckets[?contains(Name, `eu-west-1`)].Name' --output text)
 
+```
+
+### Setting up working directory on local system
+After checks and declare of varables is done we start to create a working directory on the local system for configure files 
+```powershell
 #Create our main directory for the exercies
 if ((test-path $dir) -eq $false) {mkdir $Dir}
 cd $Dir
@@ -39,78 +87,276 @@ cd $Dir
 #Check if necessary files and module e exist
 if ((Test-Path .\dockerfile) -eq $false) {
     write-host -ForegroundColor Yellow "dockerfile don't exist on system, download it to main directory"
-    Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/dockerfile -OutFile .\dockerfile
+    Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/dockerfile" -OutFile .\dockerfile
     }
 else {write-host -ForegroundColor Green "dockerfile exist in directory"} 
 if ((Test-Path .\buildspec.yml) -eq $false) {
     write-host -ForegroundColor Yellow "buildspec.yml don't exist on system, download it to main directory"
-    Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/buildspec.yml -OutFile .\buildspec.yml
+    Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/buildspec.yml" -OutFile .\buildspec.yml
     }
 else {write-host -ForegroundColor Green "buildspec.yml exist in directory"} 
 if ((Test-Path .\appspec.yml) -eq $false) {
     write-host -ForegroundColor Yellow "appspec.yml don't exist on system, download it to main directory"
-    curl -O https://s3.amazonaws.com/aws-codedeploy-us-east-1/samples/latest/SampleApp_Linux.zip; tar -xf .\SampleApp_Linux.zip; Remove-Item .\SampleApp_Linux.zip
+    Invoke-WebRequest "https://s3.amazonaws.com/aws-codedeploy-us-east-1/samples/latest/SampleApp_Linux.zip" -OutFile .\SampleApp_Linux.zip; tar -xf .\SampleApp_Linux.zip; Remove-Item .\SampleApp_Linux.zip
     }
 else {write-host -ForegroundColor Green "appspec.yml exist in directory"}
 
 write-host -ForegroundColor Yellow "download index.html to main directory"
-Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/buildspec.yml -OutFile .\buildspec.yml
-
-
+Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/index.html" -OutFile .\index.html
+```
+Here we start with create a local container in Docker and create a local repo, we also do a check if the containers local index file match local systems webservice for checking that configure in docker and webservice is working correctly before continue to AWS.
+```powershell
+# ------ Local Work been done -------
 #Create Docker build and print the index file on docker container for a fast check if working
 docker build -t $dockerimage .
 docker run -d -p 80:80 --name $dockername $dockerimage
 $dockerlocalhost = (docker exec -it $dockername /bin/bash -c "curl localhost")
 $localhost = (Invoke-RestMethod localhost)
-if ((Compare-Object -ReferenceObject $dockerlocalhost -DifferenceObject $localhost) -match "test") {write-host -ForegroundColor Green "Local docker container deployed correctly"}
+if ((Compare-Object -ReferenceObject $dockerlocalhost -DifferenceObject $localhost) -match $null) {write-host -ForegroundColor Green "Local docker container deployed correctly"}
 else {
         Write-Host -ForegroundColor Red "Something went wrong with local docker deployment" 
         break
 }
 
-write-host "test"
-# docker run -lt mynginx2023 /bin/bash
 
 #Setup locally repository in our main directory and make the first commit to it
 git init
 git add .
 git commit -m 'Add simple web site'
-
-
-
-#Create CodeCommit Rpository 
-aws codecommit create-repository --repository-name $RepositoryNames --repository-description "$RepositoryNames"
-
-
-
-git remote add origin https://git-codecommit.eu-west-1.amazonaws.com/v1/repos/$RepositoryNames
-git push -u origin main
-
-#git clone https://git-codecommit.eu-west-1.amazonaws.com/v1/repos/$RepositoryNames
-
-#Create Elastic Container Registry Repository
-aws ecr create-repository --repository-name $RepositoryNames
-$repo = ((aws ecr describe-repositories --repository-names $RepositoryNames --query 'repositories[0].repositoryUri').replace('"',"").split("/"))
-if ((Test-Path .\buildspec.yml) -eq $false) {Invoke-WebRequest -Uri https://github.com/larsappel/ECSDemo/raw/main/buildspec.yml -OutFile .\buildspec.yml}
-(Get-Content .\buildspec.yml) -replace "<registry uri>", "$($repo[0])" | Set-Content .\buildspec.yml
-(Get-Content .\buildspec.yml) -replace "<image name>", "$($repo[1])" | Set-Content .\buildspec.yml
-(Get-Content .\buildspec.yml) -replace "<region>", "$Region" | Set-Content .\buildspec.yml
-(Get-Content .\buildspec.yml) -replace "MyContainerName", "$ContainerName" | Set-Content .\buildspec.yml
-
-
-Docker tag $dockerimage $repo[0]/$RepositoryNames
-
-
-aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin $repo[0]
-docker push $repo[0]/$RepositoryNames:latest
-
-aws ecr describe-images --repository-name $RepositoryNames
 ```
 
+### ECR
+Here we start to configre files for setting up AWS repo, CodeBuilder, CodePipeline etc. Even added a check for see if file exsist in working directory and if not donwload from my public repo and configure these files after.
+```powershell
+#Create Elastic Container Registry Repository
+aws ecr create-repository --repository-name $RepositoryNames
+$ECRrepo = ((aws ecr describe-repositories --repository-names $RepositoryNames --query 'repositories[0].repositoryUri').replace('"',"").split("/"))
+if ((Test-Path .\buildspec.yml) -eq $false) {Invoke-WebRequest -Uri https://github.com/larsappel/ECSDemo/raw/main/buildspec.yml -OutFile .\buildspec.yml}
+(Get-Content .\buildspec.yml) -replace "<registry uri>", "$($ECRrepo[0])" | Set-Content .\buildspec.yml
+(Get-Content .\buildspec.yml) -replace "<image name>", "$($ECRrepo[1])" | Set-Content .\buildspec.yml
+(Get-Content .\buildspec.yml) -replace "<region>", "$Region" | Set-Content .\buildspec.yml
+(Get-Content .\buildspec.yml) -replace "<MyContainerName>", "$ContainerName" | Set-Content .\buildspec.yml
+(Get-Content .\buildspec.yml) -replace "<project-name>", "$project" | Set-Content .\buildspec.yml
 
-### userdata
-```bash
-#!/bin/bash
+```
+
+### Docker and AWS connection
+Here we create our like between docker and AWS and push up to AWS ECR
+```powershell
+# craete a login link between AWS ECR user and Docker user
+aws ecr get-login-password --region eu-west-1 | docker login --username AWS --password-stdin $ECRrepo[0]
+
+# Tag docker image with repo name and push to AWS ECR
+Docker tag $dockerimage "$($ECRrepo[0])/$($RepositoryNames):latest"
+docker push "$($ECRrepo[0])/$($RepositoryNames):latest"
+
+# ------ End of Local Work been done -------
+
+```
+
+### Roles and Policys
+Here we create a unique IAM roles and Policy for each Repo we create for better knowing what is using what when comes to later troubleshoot or removing access and roles.
+```powershell
+# -----SET UP IAM Roles and Policys-------
+$extRoles = (aws iam list-roles --query 'Roles[*].RoleName').trim()
+if ($IAMRole -notcontains $extRoles) {
+    write-host -ForegroundColor Yellow "download role.json to main directory"
+    Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/role.json" -OutFile .\role.json
+}
+write-host -ForegroundColor Yellow "Create instance profile with role"
+aws iam create-instance-profile --instance-profile-name $IAMRole
+aws iam create-role --role-name $IAMRole --assume-role-policy-document file://role.json
+aws iam attach-role-policy --role-name $IAMRole --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+aws iam add-role-to-instance-profile --instance-profile-name $IAMRole --role-name $IAMRole
+
+write-host -ForegroundColor Green "Configure IAM roles and policy"
+
+Invoke-WebRequest -Uri "https://github.com/Norra-frenzu/AWS/raw/main/lib/codedeployrole.json" -OutFile .\codedeployrole.json
+aws iam create-role --role-name "$CodeBuildRole" --assume-role-policy-document file://codedeployrole.json
+aws iam attach-role-policy --role-name "$CodeBuildRole" --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
+```
+Had some real problem with setting up the role and policy for CodeBuild so it can be good to know that this settings can make problem in building a project in later stage.
+```powershell
+ ## Special write to json
+if ((Test-Path .\CodeBuildBasePolicy.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/CodeBuildBasePolicy.json -OutFile .\CodeBuildBasePolicy.json}
+(Get-Content .\CodeBuildBasePolicy.json) -replace "<project-name>", "$project" | Set-Content .\CodeBuildBasePolicy.json
+(Get-Content .\CodeBuildBasePolicy.json) -replace "<Region>", "$Region" | Set-Content .\CodeBuildBasePolicy.json
+(Get-Content .\CodeBuildBasePolicy.json) -replace "<account-id>", "$accountID" | Set-Content .\CodeBuildBasePolicy.json
+(Get-Content .\CodeBuildBasePolicy.json) -replace "<repo>", "$project" | Set-Content .\CodeBuildBasePolicy.json
+(Get-Content .\CodeBuildBasePolicy.json) -replace "<ECS-repo>", "$ECSrepo" | Set-Content .\CodeBuildBasePolicy.json
+
+aws iam create-policy --policy-name "$CodeBuildPolicy" --policy-document file://CodeBuildBasePolicy.json
+$CodeBuildPolicyArn = (aws iam list-policies --query "Policies[?PolicyName=='$CodeBuildPolicy'].{ARN:Arn}" --output text)
+aws iam attach-role-policy --role-name "$CodeBuildRole" --policy-arn $CodeBuildPolicyArn
+
+write-host -ForegroundColor Yellow "set up Role and policy for CodePipeline"
+
+if ((Test-Path .\CodePipelinePermissionPolicy.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/CodePipelinePermissionPolicy.json -OutFile .\CodePipelinePermissionPolicy.json}
+aws iam create-policy --policy-name "$IAMCodePipeline" --policy-document file://CodePipelinePermissionPolicy.json
+if ((Test-Path .\CodePipelineTrust.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/CodePipelineTrust.json -OutFile .\CodePipelineTrust.json}
+aws iam create-role --path /service-role/ --role-name "$IAMCodePipeline" --assume-role-policy-document file://CodePipelineTrust.json
+$CodePipelinePolicyArn = (aws iam list-policies --query "Policies[?PolicyName=='$IAMCodePipeline'].{ARN:Arn}" --output text)
+$CodePipelineRoleArn = (aws iam list-roles --query "Roles[?RoleName=='$IAMCodePipeline'].{ARN:Arn}" --output text)
+aws iam attach-role-policy --role-name "$IAMCodePipeline" --policy-arn $CodePipelinePolicyArn
+aws iam attach-role-policy --role-name "$CodeBuildRole" --policy-arn $CodePipelinePolicyArn
+
+# ------ End of Roles and policys -------
+
+```
+
+### Networking
+Here we have the configure for Security groups for both Load-balancer and Containers.
+Only allow http traffic from load-balancer over port 80 but open port 22 world wide
+Load-balancer has only port 80 open world wide.
+```powershell
+# ------ Setup Networking stuff -------
+
+aws ec2 create-security-group --description "$SecgrpLB" --group-name "$SecgrpLB"
+aws ec2 authorize-security-group-ingress --group-name "$SecgrpLB" --protocol tcp --port 80 --cidr 0.0.0.0/0
+$SecgrpLBid = aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text
+
+start-sleep -Seconds 5
+
+aws ec2 create-security-group --description "$ContainerSecgrpName" --group-name "$ContainerSecgrpName"
+aws ec2 authorize-security-group-ingress --group-name $ContainerSecgrpName --protocol tcp --port 80 --source-group $SecgrpLBid
+aws ec2 authorize-security-group-ingress --group-name $ContainerSecgrpName --protocol tcp --port 22 --cidr 0.0.0.0/0
+$secgrpid = (aws ec2 describe-security-groups --query 'SecurityGroups[].GroupId' --group-names $ContainerSecgrpName).trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
+
+```
+
+### Load-Balancer
+Creating the load-balancer togther with target-group and listner
+```powershell
+# Load-balancer
+
+write-host -ForegroundColor Green "Set up ESC cluster"
+aws ecs create-cluster --cluster-name "$ECScluster" --capacity-providers FARGATE --default-capacity-provider-strategy capacityProvider=FARGATE,weight=1
+
+aws elbv2 create-load-balancer --name $LBName1 --subnets $subnet[0] $subnet[1] $subnet[2] --security-groups (aws ec2 describe-security-groups --query "SecurityGroups[?GroupName=='$SecgrpLB'].GroupId" --output text) --region $Region
+aws elbv2 create-target-group --name $LBgrpName --protocol HTTP --port 80 --target-type ip --vpc-id $VpcID --region $Region
+
+$LBArn =(aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(DNSName, '$LBname1')].LoadBalancerArn" --output text)
+$TargetGroupArn =(aws elbv2 describe-target-groups --query "TargetGroups[?TargetGroupName=='$LBgrpName'].TargetGroupArn" --output text)
+
+aws elbv2 create-listener --load-balancer-arn $LBArn --protocol HTTP --port 80 --default-actions Type=forward,TargetGroupArn=$TargetGroupArn --region $Region
+$ListnerArn = (aws elbv2 describe-listeners --load-balancer-arn $LBArn --query "Listeners[].ListenerArn" --output text)
+
+# ------- End of Networking stuff -------
+```
+![Alt text](image-6.png)
+![Alt text](image-5.png)
+![Alt text](image-2.png)
+
+
+### Edit configure files
+Here we are configure the diffrent configure file for task, service, cluster, codebuild, codepipeline
+```powershell
+# ------- Creating some json file -------
+  ### Task define
+write-host -ForegroundColor Green "Preper for setting up Task-Definition"
+write-host -ForegroundColor Yellow "write to task-definition"
+echo '{
+    "containerDefinitions": [
+      {
+        "name": "<container name>",
+        "image": "<image>",
+        "portMappings": [
+            {
+            "containerPort": 80,
+            "hostPort": 80
+        }
+        ],
+        "essential": true
+      }
+    ],
+    "networkMode": "awsvpc",
+    "requiresCompatibilities": ["FARGATE"]
+  }' > .\task-definition.json
+
+(Get-Content .\task-definition.json) -replace "<image>", "$($ECRrepo[0])/$($ECRrepo[1])" | Set-Content .\task-definition.json
+(Get-Content .\task-definition.json) -replace "<container name>", "$ContainerName" | Set-Content .\task-definition.json
+(Get-Content .\task-definition.json) -replace "<your-account-id>", "$accountID" | Set-Content .\task-definition.json
+
+
+  ### CODEBUILD
+  
+
+if ((Test-Path .\codebuild.json) -eq $false) {
+    echo '{
+        "name": "<project-name>",
+        "description": "<project-name>",
+        "source": {
+          "type": "CODECOMMIT",
+          "location": "https://git-codecommit.<Region>.amazonaws.com/v1/repos/<repo>",
+          "gitCloneDepth": 1
+        },
+        "sourceVersion": "refs/heads/master",
+        "artifacts": {
+          "type": "NO_ARTIFACTS"
+        },
+        "environment": {
+          "type": "LINUX_CONTAINER",
+          "image": "aws/codebuild/standard:7.0",
+          "computeType": "BUILD_GENERAL1_SMALL",
+          "privilegedMode": true
+        },
+        "serviceRole": "<service-role>"
+    }' > .\codebuild.json    
+}
+
+(Get-Content .\codebuild.json) -replace "<Build-name>", "$Buildname" | Set-Content .\codebuild.json
+(Get-Content .\codebuild.json) -replace "<repo>", "$ECSrepo" | Set-Content .\codebuild.json
+(Get-Content .\codebuild.json) -replace "<service-role>", "$CodeBuildRole" | Set-Content .\codebuild.json
+(Get-Content .\codebuild.json) -replace "<project-name>", "$project" | Set-Content .\codebuild.json
+(Get-Content .\codebuild.json) -replace "<Region>", "$Region" | Set-Content .\codebuild.json
+
+### ClusterService
+  write-host -ForegroundColor Yellow "write to ClusterService"
+echo '{
+    "cluster": "<cluster-name>",
+	"serviceName": "<Service-name>",
+	"taskDefinition": "<task-name>",
+	"loadBalancers": [
+	{
+		"targetGroupArn": "<TargetGroupArn>",
+		"containerName": "<container-name>",
+		"containerPort": 80
+	}
+	],
+	"desiredCount": 1,
+    "networkConfiguration": {
+        "awsvpcConfiguration": {
+            "subnets": [
+                "<subnet-1>",
+                "<subnet-2>",
+                "<subnet-3>"
+            ],
+            "securityGroups": [
+                "<secgrp>"
+            ],
+            "assignPublicIp": "ENABLED"
+        }
+    }
+  }' > .\ClusterService.json
+ write-host -ForegroundColor Yellow "Write to CloudService"
+ if ((Test-Path .\ClusterService.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/codebuild.json -OutFile .\ClusterService.json}
+(Get-Content .\ClusterService.json) -replace "<task-name>", "$TaskDefinition" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<subnet-1>", "$($subnet[0])" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<subnet-2>", "$($subnet[1])" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<subnet-3>", "$($subnet[2])" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<cluster-name>", "$($ECScluster[2])" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<Service-name>", "$($ECSservice)" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<TargetGroupArn>", "$($TargetGroupArn)" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<container-name>", "$ContainerName" | Set-Content .\ClusterService.json
+(Get-Content .\ClusterService.json) -replace "<secgrp>", "$secgrpid" | Set-Content .\ClusterService.json
+
+
+  ### ECS
+
+write-host -ForegroundColor Yellow "Write to  userdata file for EC2 instances"
+
+if ((Test-Path .\userdata.txt) -eq $false) {
+    echo '#!/bin/bash
 # Install docker
 dnf update -y
 dnf install docker -y
@@ -125,8 +371,213 @@ cat <<EOF > /root/.docker/config.json
 }
 EOF
 # Run docker container
-docker run -d -p 80:80 389058819117.dkr.ecr.eu-west-1.amazonaws.com/docker-mynginx2023
+docker run -d -p 80:80 <registry uri>/<image name>' > .\userdata.txt
+}
+(Get-Content .\userdata.txt) -replace "<registry uri>", "$($ECRrepo[0])" | Set-Content .\userdata.txt
+(Get-Content .\userdata.txt) -replace "<image name>", "$($ECRrepo[1])" | Set-Content .\userdata.txt
+
+  ### pipelineconfig
+write-host -ForegroundColor Yellow "write to pipeline config"
+echo '{
+    "pipeline": {
+      "name": "<ProjectName>",
+      "roleArn": "<Build-Arn>",
+      "artifactStore": {
+        "type": "S3",
+        "location": "codepipeline-eu-west-1-814589278884"
+      },
+      "stages": [
+        {
+          "name": "Source",
+          "actions": [
+            {
+              "name": "SourceAction",
+              "actionTypeId": {
+                "category": "Source",
+                "owner": "AWS",
+                "version": "1",
+                "provider": "CodeCommit"
+              },
+              "configuration": {
+                "RepositoryName": "<ECS-repo>",
+                "BranchName": "master"
+              },
+              "outputArtifacts": [
+                {
+                  "name": "SourceOutput"
+                }
+              ],
+              "runOrder": 1
+            }
+          ]
+        },
+        {
+          "name": "BuildAndDeploy",
+          "actions": [
+            {
+              "name": "BuildAndDeployAction",
+              "actionTypeId": {
+                "category": "Build",
+                "owner": "AWS",
+                "version": "1",
+                "provider": "CodeBuild"
+              },
+              "configuration": {
+                "ProjectName": "<ProjectName>"
+              },
+              "inputArtifacts": [
+                {
+                  "name": "SourceOutput"
+                }
+              ],
+              "outputArtifacts": [
+                {
+                  "name": "BuildOutput"
+                }
+              ],
+              "runOrder": 1
+            },
+            {
+              "name": "DeployAction",
+              "actionTypeId": {
+                "category": "Deploy",
+                "owner": "AWS",
+                "version": "1",
+                "provider": "ECS"
+              },
+              "configuration": {
+                "ClusterName": "<Cluster-name>",
+                "ServiceName": "<Cluster-service>",
+                "FileName": "imagedefinitions.json"
+              },
+              "inputArtifacts": [
+                {
+                  "name": "BuildOutput"
+                }
+              ],
+              "runOrder": 2
+            }
+          ]
+        }
+      ]
+    }
+  }' > .\pipelineconfig.json
+if ((Test-Path .\pipelineconfig.json) -eq $false) {Invoke-WebRequest -Uri https://github.com/Norra-frenzu/AWS/raw/main/lib/pipelineconfig.json -OutFile .\pipelineconfig.json}
+(Get-Content .\pipelineconfig.json) -replace "<Pipeline-name>", "$CodePipeline" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<account-id>", "$accountID" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<Region>", "$Region" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<ECS-repo>", "$ECSrepo" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<Cluster-name>", "$ECScluster" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<Cluster-service>", "$ECSservice" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<Build-arn>", "$CodePipelineRoleArn" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<s3-bucket>", "$S3BucketName" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<ProjectName>", "$project" | Set-Content .\pipelineconfig.json
+
+(Get-Content .\pipelineconfig.json) -replace "<ProdListenerArns>", "$ListnerArn" | Set-Content .\pipelineconfig.json
+(Get-Content .\pipelineconfig.json) -replace "<targetGroups>", "$LBgrpName" | Set-Content .\pipelineconfig.json
+
+# ------- End of writing to json files-------
+
+write-host -ForegroundColor Yellow "Configure local repo"
+git init
+git add .
+git commit -m 'Add simple web site'
+
+
+```
+### ECS
+Here we now setting up ECS repo and create 
+```powershell
+
+# ------- Commit to ESC Repo -------  
+
+write-host -ForegroundColor Green "Setting up ECS repo"
+aws codecommit create-repository --repository-name "$ECSrepo" --repository-description "$ECSrepo"
+$CommitHTTP = ((aws codecommit get-repository --repository-name $ECSrepo --query 'repositoryMetadata.cloneUrlHttp').replace('"',''))
+git remote add origin $CommitHTTP
+git push -u origin master
 
 ```
 
+### Creating EC2 instancs
+setting up a EC2 with userdata settings for a simple controll to se if settings are applied correctly
+```powershell
+# ------- Create a simple EC2 with user data ------
+write-host -ForegroundColor Yellow "Create a EC2 instances"
+aws ec2 run-instances --image-id $imageID --count 1 --instance-type t2.micro --key-name $Keyname --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=$EC2name}]" --user-data "file://userdata.txt" --iam-instance-profile Name=$IAMRole --security-groups $ContainerSecgrpName
 
+# ------- End of simple EC2 with user data ------
+
+```
+
+### Create Task, Serivce, Cluster, CodeBuild, Pipeline
+Now we start to create Task, Service, Cluter, CodeBuild and CodePipeline.
+```powershell
+# ------- Register task ------- 
+write-host -ForegroundColor Green "Start to create Task-Definition"
+aws ecs register-task-definition --family "$TaskDefinition" --cli-input-json file://task-definition.json --cpu 256 --memory 512 --execution-role-arn arn:aws:iam::389058819117:role/ecsTaskExecutionRole
+
+
+# ------- Create Service ------
+write-host -ForegroundColor Green "Preper for setting up Cluster Services"
+# ClusterService
+write-host -ForegroundColor Green "Start to create Cluster Services"
+aws ecs create-service --cluster "$ECScluster" --service-name "$ECSservice"  --cli-input-json file://ClusterService.json --desired-count 1 --task-definition "$TaskDefinition"
+
+# ------- Craeting project CodeBuild -------
+Write-host -ForegroundColor Yellow "Start creating Project"
+aws codebuild create-project --cli-input-json file://codebuild.json
+Write-host -ForegroundColor Yellow "Start Build Project"
+aws codebuild start-build --project-name $project
+
+
+# ------- CodePipeline
+
+write-host -ForegroundColor Yellow "Now to creating the pipeline"
+
+write-host -ForegroundColor Red "Now for the real pipeline"
+
+aws codepipeline create-pipeline --cli-input-json file://pipelineconfig.json
+
+write-host -ForegroundColor Yellow  "Pipeline in progress"
+Start-Sleep -Seconds 60
+
+```
+![Alt text](image-4.png)
+![Alt text](image-3.png)
+
+
+### Check pipeline status
+In the end I have added a check if the pipeline is still setting up and try to access load-balancers DNS name after creation is done, also added that is print https git address for ECS repo and store address in a txt document in runnings user document directory. Also shutdown EC2 if succeeded
+```powershell
+$pipelinestatus = (aws codepipeline get-pipeline-state --name $project --query 'stageStates[?latestExecution].actionStates[].latestExecution.status').trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
+while ($pipelinestatus -contains "InProgress" ){
+    
+    write-host -ForegroundColor Yellow  "Pipeline in progress"
+    start-sleep -Seconds 30
+    $pipelinestatus = (aws codepipeline get-pipeline-state --name $project --query 'stageStates[?latestExecution].actionStates[].latestExecution.status').trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
+}
+
+if ($pipelinestatus -contains "Failed") {
+    Write-Host -ForegroundColor Red "something went wrong with the pipeline"
+    break
+}
+elseif ($pipelinestatus -contains "Abandoned") {
+    Write-Host -ForegroundColor Red "Someone stopped the pipeline"
+    break
+}
+
+Write-Host -ForegroundColor Green "Pipeline Succeeded"
+
+aws ec2 stop-instances --instance-ids (aws ec2 describe-instances --filter "Name=tag:Name,Values=$EC2name" --query 'Reservations[].Instances[].InstanceId' --output text)
+
+if ((Test-Path ~\Documents\Docker\$ECSrepo-Info\) -eq $false) {mkdir ~\Documents\Docker\$ECSrepo}
+aws codecommit get-repository --repository-name 20231122-mynginx2023-ECS-Repo --query 'repositoryMetadata.cloneUrlHttp'
+aws codecommit get-repository --repository-name 20231122-mynginx2023-ECS-Repo --query 'repositoryMetadata.cloneUrlHttp' --output text >> ~\Documents\Docker\$ECSrepo\info.txt
+$LBDNSName =aws elbv2 describe-load-balancers --query "LoadBalancers[?contains(DNSName, '$LBname1')].DNSName" --output text
+explorer http://$LBDNSName
+```
+
+# Resault
+![Alt text](image-1.png)
+![Alt text](image.png)
