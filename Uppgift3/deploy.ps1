@@ -336,6 +336,7 @@ write-host -ForegroundColor Red "Now for the real pipeline"
 
 aws codepipeline create-pipeline --cli-input-json file://pipelineconfig.json
 
+write-host -ForegroundColor Yellow  "Pipeline in progress"
 Start-Sleep -Seconds 60
 
 $pipelinestatus = (aws codepipeline get-pipeline-state --name $project --query 'stageStates[?latestExecution].actionStates[].latestExecution.status').trim("[","]",'"',","," ") | Where-Object {$_ -ne ""}
